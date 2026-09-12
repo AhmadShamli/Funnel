@@ -216,7 +216,7 @@ RUN mkdir -p /data /run/funnel && \
 
 EXPOSE 8000
 
-ENTRYPOINT ["/usr/bin/tini", "--", "/app/docker-entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/app/docker-entrypoint.sh"]
 CMD ["/usr/local/bin/funnel", "serve"]
 ```
 
