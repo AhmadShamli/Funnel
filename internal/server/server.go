@@ -132,17 +132,23 @@ func (s *Server) setupRoutes() {
 		// Access Keys
 		admin.Get("/access-keys", adminH.HandleAccessKeysGet)
 		admin.Post("/access-keys", adminH.HandleAccessKeysPost)
+		admin.Post("/access-keys/{id}", adminH.HandleAccessKeysUpdate)
+		admin.Post("/access-keys/{id}/update", adminH.HandleAccessKeysUpdate)
 		admin.Post("/access-keys/{id}/toggle", adminH.HandleAccessKeysToggle)
 		admin.Post("/access-keys/{id}/delete", adminH.HandleAccessKeysDelete)
 
 		// Port Groups
 		admin.Get("/port-groups", adminH.HandlePortGroupsGet)
 		admin.Post("/port-groups", adminH.HandlePortGroupsPost)
+		admin.Post("/port-groups/{id}", adminH.HandlePortGroupsUpdate)
+		admin.Post("/port-groups/{id}/update", adminH.HandlePortGroupsUpdate)
 		admin.Post("/port-groups/{id}/delete", adminH.HandlePortGroupsDelete)
 
 		// Allowed Networks
 		admin.Get("/allowed-networks", adminH.HandleAllowedNetworksGet)
 		admin.Post("/allowed-networks", adminH.HandleAllowedNetworksPost)
+		admin.Post("/allowed-networks/{id}", adminH.HandleAllowedNetworksUpdate)
+		admin.Post("/allowed-networks/{id}/update", adminH.HandleAllowedNetworksUpdate)
 		admin.Post("/allowed-networks/{id}/delete", adminH.HandleAllowedNetworksDelete)
 
 		// Grants

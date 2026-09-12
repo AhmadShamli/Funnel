@@ -25,12 +25,12 @@
       </tr>
     </thead>
     <tbody>
-      {{range .Keys}}
+      {{range $key := .Keys}}
       <tr>
-        <td><strong>{{.Name}}</strong></td>
+        <td><strong>{{$key.Name}}</strong></td>
         <td>
           <div class="flex-row" style="flex-wrap: wrap; gap: 0.25rem;">
-            {{range .PortGroups}}
+            {{range $key.PortGroups}}
             <span class="port-badge" style="font-size: 0.75rem;">{{.Name}}</span>
             {{else}}
             <span style="color: var(--text-muted); font-size: 0.8rem;">(Global default)</span>
@@ -38,37 +38,38 @@
           </div>
         </td>
         <td>
-          {{.UseCount}} / {{if .MaxTotalUses}}{{.MaxTotalUses}}{{else}}∞{{end}}
+          {{$key.UseCount}} / {{if $key.MaxTotalUses}}{{$key.MaxTotalUses}}{{else}}∞{{end}}
         </td>
         <td>
-          {{if .MaxConcurrentIPs}}{{.MaxConcurrentIPs}}{{else}}Unlimited{{end}}
+          {{if $key.MaxConcurrentIPs}}{{$key.MaxConcurrentIPs}}{{else}}Unlimited{{end}}
         </td>
         <td>
-          {{if .AllowExtend}}
-            <span class="badge badge-success">Allowed (Max: {{if .MaxExtensions}}{{.MaxExtensions}}{{else}}∞{{end}})</span>
+          {{if $key.AllowExtend}}
+            <span class="badge badge-success">Allowed (Max: {{if $key.MaxExtensions}}{{$key.MaxExtensions}}{{else}}∞{{end}})</span>
           {{else}}
             <span class="badge badge-secondary">Disabled</span>
           {{end}}
         </td>
         <td>
-          {{if .IsActive}}
+          {{if $key.IsActive}}
             <span class="badge badge-success">Active</span>
           {{else}}
             <span class="badge badge-danger">Inactive</span>
           {{end}}
         </td>
         <td style="font-size: 0.85rem; color: var(--text-secondary);">
-          {{if .ValidUntil}}{{.ValidUntil.Format "2006-01-02 15:04"}}{{else}}Forever{{end}}
+          {{if $key.ValidUntil}}{{$key.ValidUntil.Format "2006-01-02 15:04"}}{{else}}Forever{{end}}
         </td>
         <td>
           <div class="flex-row">
-            <form action="/admin/access-keys/{{.ID}}/toggle" method="POST" style="margin: 0;">
+            <button type="button" class="btn btn-secondary btn-sm" data-modal-open="edit-key-modal-{{$key.ID}}">Edit</button>
+            <form action="/admin/access-keys/{{$key.ID}}/toggle" method="POST" style="margin: 0;">
               <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
               <button type="submit" class="btn btn-secondary btn-sm">
-                {{if .IsActive}}Disable{{else}}Enable{{end}}
+                {{if $key.IsActive}}Disable{{else}}Enable{{end}}
               </button>
             </form>
-            <form action="/admin/access-keys/{{.ID}}/delete" method="POST" style="margin: 0;" onsubmit="return confirm('Delete access key {{.Name}}?');">
+            <form action="/admin/access-keys/{{$key.ID}}/delete" method="POST" style="margin: 0;" onsubmit="return confirm('Delete access key {{$key.Name}}?');">
               <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
               <button type="submit" class="btn btn-danger btn-sm">Delete</button>
             </form>
@@ -83,6 +84,89 @@
     </tbody>
   </table>
 </div>
+
+<!-- Edit Access Key Modals -->
+{{range $key := .Keys}}
+<div id="edit-key-modal-{{$key.ID}}" class="modal-overlay" style="display: none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>Edit Access Key: {{$key.Name}}</h3>
+      <button type="button" class="modal-close" data-modal-close>✕</button>
+    </div>
+    <form action="/admin/access-keys/{{$key.ID}}" method="POST" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+
+      <div class="form-group">
+        <label for="edit_key_name_{{$key.ID}}">Key Name / Label</label>
+        <input type="text" id="edit_key_name_{{$key.ID}}" name="name" value="{{$key.Name}}" required placeholder="e.g. Contractors-SSH" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true">
+      </div>
+
+      <div class="form-group">
+        <label for="edit_key_password_{{$key.ID}}">New Password</label>
+        <div class="flex-row">
+          <input type="password" id="edit_key_password_{{$key.ID}}" name="password" placeholder="Leave empty to keep current password" autocomplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true">
+          <button type="button" class="btn btn-secondary toggle-password" data-target="edit_key_password_{{$key.ID}}">Show</button>
+        </div>
+        <small style="color: var(--text-muted);">Leave empty to keep the existing password intact</small>
+      </div>
+
+      <div class="form-group">
+        <label>Assign Port Groups</label>
+        <div style="max-height: 120px; overflow-y: auto; background: var(--bg-primary); border: 1px solid var(--border-color); padding: 0.5rem; border-radius: var(--radius-sm);">
+          {{range $.PortGroups}}
+          <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: normal; margin-bottom: 0.25rem;">
+            <input type="checkbox" name="port_group_ids[]" value="{{.ID}}" {{if hasPortGroup $key.PortGroups .ID}}checked{{end}}>
+            <span>{{.Name}} ({{len .Ports}} ports)</span>
+          </label>
+          {{else}}
+          <div style="color: var(--text-muted); font-size: 0.85rem;">No port groups created yet</div>
+          {{end}}
+        </div>
+      </div>
+
+      <div class="flex-row">
+        <div class="form-group" style="flex: 1;">
+          <label for="edit_max_concurrent_{{$key.ID}}">Max Concurrent IPs</label>
+          <input type="number" id="edit_max_concurrent_{{$key.ID}}" name="max_concurrent_ips" min="1" value="{{if $key.MaxConcurrentIPs}}{{$key.MaxConcurrentIPs}}{{end}}" placeholder="Unlimited">
+        </div>
+        <div class="form-group" style="flex: 1;">
+          <label for="edit_max_uses_{{$key.ID}}">Total Uses Limit</label>
+          <input type="number" id="edit_max_uses_{{$key.ID}}" name="max_total_uses" min="1" value="{{if $key.MaxTotalUses}}{{$key.MaxTotalUses}}{{end}}" placeholder="Unlimited">
+        </div>
+      </div>
+
+      <div class="flex-row">
+        <div class="form-group" style="flex: 1;">
+          <label for="edit_max_duration_{{$key.ID}}">Max Duration (Sec)</label>
+          <input type="number" id="edit_max_duration_{{$key.ID}}" name="max_duration_seconds" min="60" value="{{if $key.MaxDurationSeconds}}{{$key.MaxDurationSeconds}}{{end}}" placeholder="Default (3600)">
+        </div>
+        <div class="form-group" style="flex: 1;">
+          <label for="edit_max_extensions_{{$key.ID}}">Max Extensions</label>
+          <input type="number" id="edit_max_extensions_{{$key.ID}}" name="max_extensions" min="0" value="{{if $key.MaxExtensions}}{{$key.MaxExtensions}}{{end}}" placeholder="Unlimited">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label style="display: flex; align-items: center; gap: 0.5rem;">
+          <input type="checkbox" name="allow_extend" value="1" {{if $key.AllowExtend}}checked{{end}}>
+          <span>Allow Visitors to Extend Session Duration</span>
+        </label>
+      </div>
+
+      <div class="form-group">
+        <label for="edit_valid_until_{{$key.ID}}">Valid Until (Expiration Date)</label>
+        <input type="datetime-local" id="edit_valid_until_{{$key.ID}}" name="valid_until" value="{{if $key.ValidUntil}}{{$key.ValidUntil.Format "2006-01-02T15:04"}}{{end}}">
+        <small style="color: var(--text-muted);">Leave empty to never expire</small>
+      </div>
+
+      <div class="flex-row" style="margin-top: 1.5rem;">
+        <button type="button" class="btn btn-secondary" style="flex: 1;" data-modal-close>Cancel</button>
+        <button type="submit" class="btn btn-primary" style="flex: 1;">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+{{end}}
 
 <!-- Create Access Key Modal -->
 <div id="create-key-modal" class="modal-overlay" style="display: none;">

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"path/filepath"
 
+	"github.com/AhmadShamli/Funnel/internal/models"
 	"github.com/AhmadShamli/Funnel/internal/version"
 )
 
@@ -30,6 +31,14 @@ func NewTemplateManager() (*TemplateManager, error) {
 		"appName":    func() string { return version.AppName },
 		"author":     func() string { return version.Author },
 		"repoURL":    func() string { return version.RepositoryURL },
+		"hasPortGroup": func(pgs []models.PortGroup, id int64) bool {
+			for _, pg := range pgs {
+				if pg.ID == id {
+					return true
+				}
+			}
+			return false
+		},
 	}
 
 	pages := []struct {

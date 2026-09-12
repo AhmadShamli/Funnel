@@ -327,6 +327,100 @@ func (h *AdminHandlers) HandleAccessKeysDelete(w http.ResponseWriter, r *http.Re
 	http.Redirect(w, r, "/admin/access-keys", http.StatusSeeOther)
 }
 
+func (h *AdminHandlers) HandleAccessKeysUpdate(w http.ResponseWriter, r *http.Request) {
+	adminUser := GetAdminUser(r)
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Redirect(w, r, "/admin/access-keys?error=Invalid+access+key+ID", http.StatusSeeOther)
+		return
+	}
+
+	key, err := h.db.GetAccessKeyByID(r.Context(), id)
+	if err != nil || key == nil {
+		http.Redirect(w, r, "/admin/access-keys?error=Access+key+not+found", http.StatusSeeOther)
+		return
+	}
+
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		http.Redirect(w, r, "/admin/access-keys?error=Key+name+is+required", http.StatusSeeOther)
+		return
+	}
+	key.Name = name
+
+	password := strings.TrimSpace(r.FormValue("password"))
+	if password != "" {
+		key.PasswordHash = auth.HashAccessKey(h.cfg.SecretKey, password)
+	} else {
+		key.PasswordHash = "" // Preserves existing password in db.UpdateAccessKey
+	}
+
+	var portGroupIDs []int64
+	_ = r.ParseForm()
+	for _, rawID := range r.Form["port_group_ids[]"] {
+		if pgID, err := strconv.ParseInt(rawID, 10, 64); err == nil {
+			portGroupIDs = append(portGroupIDs, pgID)
+		}
+	}
+	key.PortGroupIDs = portGroupIDs
+
+	var maxConcurrent, maxUses, maxDuration, maxExt *int
+	if v := r.FormValue("max_concurrent_ips"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			maxConcurrent = &n
+		}
+	}
+	key.MaxConcurrentIPs = maxConcurrent
+
+	if v := r.FormValue("max_total_uses"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			maxUses = &n
+		}
+	}
+	key.MaxTotalUses = maxUses
+
+	if v := r.FormValue("max_duration_seconds"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			maxDuration = &n
+		}
+	}
+	key.MaxDurationSeconds = maxDuration
+
+	if v := r.FormValue("max_extensions"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			maxExt = &n
+		}
+	}
+	key.MaxExtensions = maxExt
+
+	var validUntil *time.Time
+	if v := r.FormValue("valid_until"); v != "" {
+		if t, err := time.Parse("2006-01-02T15:04", v); err == nil {
+			utc := t.UTC()
+			validUntil = &utc
+		}
+	}
+	key.ValidUntil = validUntil
+
+	key.AllowExtend = r.FormValue("allow_extend") == "1"
+
+	if err := h.db.UpdateAccessKey(r.Context(), key); err != nil {
+		http.Redirect(w, r, "/admin/access-keys?error="+err.Error(), http.StatusSeeOther)
+		return
+	}
+
+	_ = h.db.RecordAuditEvent(r.Context(), &models.AuditEvent{
+		EventType:       "ACCESS_KEY_UPDATED",
+		ActorType:       "admin",
+		ActorIdentifier: adminUser.Username,
+		TargetIP:        "",
+		DetailsJSON:     fmt.Sprintf(`{"key_name":"%s"}`, name),
+	})
+
+	http.Redirect(w, r, "/admin/access-keys?success=Access+key+updated", http.StatusSeeOther)
+}
+
 // --- Port Groups ---
 
 func (h *AdminHandlers) HandlePortGroupsGet(w http.ResponseWriter, r *http.Request) {
@@ -396,6 +490,79 @@ func (h *AdminHandlers) HandlePortGroupsDelete(w http.ResponseWriter, r *http.Re
 	http.Redirect(w, r, "/admin/port-groups", http.StatusSeeOther)
 }
 
+func (h *AdminHandlers) HandlePortGroupsUpdate(w http.ResponseWriter, r *http.Request) {
+	adminUser := GetAdminUser(r)
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Redirect(w, r, "/admin/port-groups?error=Invalid+port+group+ID", http.StatusSeeOther)
+		return
+	}
+
+	pg, err := h.db.GetPortGroupByID(r.Context(), id)
+	if err != nil || pg == nil {
+		http.Redirect(w, r, "/admin/port-groups?error=Port+group+not+found", http.StatusSeeOther)
+		return
+	}
+
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		http.Redirect(w, r, "/admin/port-groups?error=Group+name+is+required", http.StatusSeeOther)
+		return
+	}
+	pg.Name = name
+	pg.Description = strings.TrimSpace(r.FormValue("description"))
+	pg.AvailabilityMode = r.FormValue("availability_mode")
+
+	duration, _ := strconv.Atoi(r.FormValue("grant_duration_seconds"))
+	if duration <= 0 {
+		duration = 3600
+	}
+	pg.GrantDurationSeconds = duration
+	pg.MaxDurationSeconds = duration * 4
+
+	var maxExt *int
+	if v := r.FormValue("max_extensions"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			maxExt = &n
+		}
+	}
+	pg.MaxExtensions = maxExt
+	pg.AllowExtend = r.FormValue("allow_extend") == "1"
+
+	_ = r.ParseForm()
+	protocols := r.Form["port_protocol[]"]
+	ports := r.Form["port_number[]"]
+
+	var portRules []models.PortRule
+	for i := 0; i < len(ports); i++ {
+		pNum, err := strconv.Atoi(ports[i])
+		if err == nil && pNum >= 1 && pNum <= 65535 {
+			proto := "tcp"
+			if i < len(protocols) && strings.ToLower(protocols[i]) == "udp" {
+				proto = "udp"
+			}
+			portRules = append(portRules, models.PortRule{Protocol: proto, Port: pNum})
+		}
+	}
+	pg.Ports = portRules
+
+	if err := h.db.UpdatePortGroup(r.Context(), pg); err != nil {
+		http.Redirect(w, r, "/admin/port-groups?error="+err.Error(), http.StatusSeeOther)
+		return
+	}
+
+	_ = h.db.RecordAuditEvent(r.Context(), &models.AuditEvent{
+		EventType:       "PORT_GROUP_UPDATED",
+		ActorType:       "admin",
+		ActorIdentifier: adminUser.Username,
+		TargetIP:        "",
+		DetailsJSON:     fmt.Sprintf(`{"group_name":"%s"}`, name),
+	})
+
+	http.Redirect(w, r, "/admin/port-groups?success=Port+group+updated", http.StatusSeeOther)
+}
+
 // --- Allowed Networks ---
 
 func (h *AdminHandlers) HandleAllowedNetworksGet(w http.ResponseWriter, r *http.Request) {
@@ -450,6 +617,62 @@ func (h *AdminHandlers) HandleAllowedNetworksDelete(w http.ResponseWriter, r *ht
 	id, _ := strconv.ParseInt(idStr, 10, 64)
 	_ = h.db.DeleteAllowedNetwork(r.Context(), id)
 	http.Redirect(w, r, "/admin/allowed-networks", http.StatusSeeOther)
+}
+
+func (h *AdminHandlers) HandleAllowedNetworksUpdate(w http.ResponseWriter, r *http.Request) {
+	adminUser := GetAdminUser(r)
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Redirect(w, r, "/admin/allowed-networks?error=Invalid+network+rule+ID", http.StatusSeeOther)
+		return
+	}
+
+	an, err := h.db.GetAllowedNetworkByID(r.Context(), id)
+	if err != nil || an == nil {
+		http.Redirect(w, r, "/admin/allowed-networks?error=Network+rule+not+found", http.StatusSeeOther)
+		return
+	}
+
+	name := strings.TrimSpace(r.FormValue("name"))
+	cidr := strings.TrimSpace(r.FormValue("network_cidr"))
+	if name == "" || cidr == "" {
+		http.Redirect(w, r, "/admin/allowed-networks?error=Name+and+CIDR+are+required", http.StatusSeeOther)
+		return
+	}
+	an.Name = name
+	an.NetworkCIDR = cidr
+	an.Mode = r.FormValue("mode")
+
+	duration, _ := strconv.Atoi(r.FormValue("grant_duration_seconds"))
+	if duration <= 0 {
+		duration = 3600
+	}
+	an.GrantDurationSeconds = duration
+
+	var portGroupIDs []int64
+	_ = r.ParseForm()
+	for _, rawID := range r.Form["port_group_ids[]"] {
+		if pgID, err := strconv.ParseInt(rawID, 10, 64); err == nil {
+			portGroupIDs = append(portGroupIDs, pgID)
+		}
+	}
+	an.PortGroupIDs = portGroupIDs
+
+	if err := h.db.UpdateAllowedNetwork(r.Context(), an); err != nil {
+		http.Redirect(w, r, "/admin/allowed-networks?error="+err.Error(), http.StatusSeeOther)
+		return
+	}
+
+	_ = h.db.RecordAuditEvent(r.Context(), &models.AuditEvent{
+		EventType:       "ALLOWED_NETWORK_UPDATED",
+		ActorType:       "admin",
+		ActorIdentifier: adminUser.Username,
+		TargetIP:        "",
+		DetailsJSON:     fmt.Sprintf(`{"network_name":"%s","cidr":"%s"}`, name, cidr),
+	})
+
+	http.Redirect(w, r, "/admin/allowed-networks?success=Network+rule+updated", http.StatusSeeOther)
 }
 
 // --- Active Grants ---

@@ -168,8 +168,8 @@ input:focus, select:focus, textarea:focus {
 }
 
 .btn-block,
-.auth-card form .btn,
-.auth-card .btn-primary {
+.auth-card form button[type="submit"],
+.auth-card .btn-primary:not(.toggle-password) {
   width: 100%;
 }
 
@@ -593,6 +593,19 @@ tr:hover td {
   display: flex;
   gap: 0.75rem;
   align-items: center;
+}
+
+.flex-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.toggle-password {
+  width: auto !important;
+  min-width: 4.5rem;
+  padding: 0.75rem 0.85rem !important;
+  flex-shrink: 0;
+  text-align: center;
 }
 
 /* Footer & Branding */

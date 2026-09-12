@@ -45,10 +45,13 @@
           {{if .IsActive}}<span class="badge badge-success">Active</span>{{else}}<span class="badge badge-danger">Inactive</span>{{end}}
         </td>
         <td>
-          <form action="/admin/allowed-networks/{{.ID}}/delete" method="POST" style="margin: 0;" onsubmit="return confirm('Delete allowed network rule {{.Name}}?');">
-            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-            <button type="submit" class="btn btn-danger btn-sm">Delete</button>
-          </form>
+          <div class="flex-row">
+            <button type="button" class="btn btn-secondary btn-sm" data-modal-open="edit-network-modal-{{.ID}}">Edit</button>
+            <form action="/admin/allowed-networks/{{.ID}}/delete" method="POST" style="margin: 0;" onsubmit="return confirm('Delete allowed network rule {{.Name}}?');">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+            </form>
+          </div>
         </td>
       </tr>
       {{else}}
@@ -59,6 +62,62 @@
     </tbody>
   </table>
 </div>
+
+<!-- Edit Network Rule Modals -->
+{{range $net := .Networks}}
+<div id="edit-network-modal-{{$net.ID}}" class="modal-overlay" style="display: none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>Edit Allowed Network Rule: {{$net.Name}}</h3>
+      <button type="button" class="modal-close" data-modal-close>✕</button>
+    </div>
+    <form action="/admin/allowed-networks/{{$net.ID}}" method="POST">
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+
+      <div class="form-group">
+        <label for="edit_net_name_{{$net.ID}}">Rule Name</label>
+        <input type="text" id="edit_net_name_{{$net.ID}}" name="name" value="{{$net.Name}}" required placeholder="e.g. Office Subnet or Branch Office">
+      </div>
+
+      <div class="form-group">
+        <label for="edit_net_cidr_{{$net.ID}}">Network CIDR or Single IP</label>
+        <input type="text" id="edit_net_cidr_{{$net.ID}}" name="network_cidr" value="{{$net.NetworkCIDR}}" required placeholder="e.g. 198.51.100.0/24 or 2001:db8::/48" style="font-family: monospace;">
+      </div>
+
+      <div class="flex-row">
+        <div class="form-group" style="flex: 1;">
+          <label for="edit_net_mode_{{$net.ID}}">Authorization Mode</label>
+          <select id="edit_net_mode_{{$net.ID}}" name="mode">
+            <option value="always_allowed" {{if eq $net.Mode "always_allowed"}}selected{{end}}>Always-Allowed (No Password Required)</option>
+            <option value="login_required" {{if eq $net.Mode "login_required"}}selected{{end}}>Login-Required (Enforce password)</option>
+          </select>
+        </div>
+        <div class="form-group" style="flex: 1;">
+          <label for="edit_net_duration_{{$net.ID}}">Grant Duration (Sec)</label>
+          <input type="number" id="edit_net_duration_{{$net.ID}}" name="grant_duration_seconds" value="{{$net.GrantDurationSeconds}}" min="60" required>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Port Groups to Grant</label>
+        <div style="max-height: 120px; overflow-y: auto; background: var(--bg-primary); border: 1px solid var(--border-color); padding: 0.5rem; border-radius: var(--radius-sm);">
+          {{range $.PortGroups}}
+          <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: normal; margin-bottom: 0.25rem;">
+            <input type="checkbox" name="port_group_ids[]" value="{{.ID}}" {{if hasPortGroup $net.PortGroups .ID}}checked{{end}}>
+            <span>{{.Name}} ({{len .Ports}} ports)</span>
+          </label>
+          {{end}}
+        </div>
+      </div>
+
+      <div class="flex-row" style="margin-top: 1.5rem;">
+        <button type="button" class="btn btn-secondary" style="flex: 1;" data-modal-close>Cancel</button>
+        <button type="submit" class="btn btn-primary" style="flex: 1;">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+{{end}}
 
 <!-- Create Network Rule Modal -->
 <div id="create-network-modal" class="modal-overlay" style="display: none;">

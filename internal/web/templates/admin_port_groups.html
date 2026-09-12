@@ -56,10 +56,13 @@
           {{if .IsActive}}<span class="badge badge-success">Active</span>{{else}}<span class="badge badge-danger">Inactive</span>{{end}}
         </td>
         <td>
-          <form action="/admin/port-groups/{{.ID}}/delete" method="POST" style="margin: 0;" onsubmit="return confirm('Delete port group {{.Name}}?');">
-            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-            <button type="submit" class="btn btn-danger btn-sm">Delete</button>
-          </form>
+          <div class="flex-row">
+            <button type="button" class="btn btn-secondary btn-sm" data-modal-open="edit-group-modal-{{.ID}}">Edit</button>
+            <form action="/admin/port-groups/{{.ID}}/delete" method="POST" style="margin: 0;" onsubmit="return confirm('Delete port group {{.Name}}?');">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+            </form>
+          </div>
         </td>
       </tr>
       {{else}}
@@ -70,6 +73,80 @@
     </tbody>
   </table>
 </div>
+
+<!-- Edit Port Group Modals -->
+{{range $pg := .PortGroups}}
+<div id="edit-group-modal-{{$pg.ID}}" class="modal-overlay" style="display: none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>Edit Port Group: {{$pg.Name}}</h3>
+      <button type="button" class="modal-close" data-modal-close>✕</button>
+    </div>
+    <form action="/admin/port-groups/{{$pg.ID}}" method="POST">
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+
+      <div class="form-group">
+        <label for="edit_group_name_{{$pg.ID}}">Group Name</label>
+        <input type="text" id="edit_group_name_{{$pg.ID}}" name="name" value="{{$pg.Name}}" required placeholder="e.g. Web Services or Database">
+      </div>
+
+      <div class="form-group">
+        <label for="edit_group_desc_{{$pg.ID}}">Description</label>
+        <input type="text" id="edit_group_desc_{{$pg.ID}}" name="description" value="{{$pg.Description}}" placeholder="Optional description">
+      </div>
+
+      <div class="flex-row">
+        <div class="form-group" style="flex: 1;">
+          <label for="edit_avail_mode_{{$pg.ID}}">Availability Mode</label>
+          <select id="edit_avail_mode_{{$pg.ID}}" name="availability_mode">
+            <option value="key_only" {{if eq $pg.AvailabilityMode "key_only"}}selected{{end}}>Key Only (Assigned to Access Keys)</option>
+            <option value="global" {{if eq $pg.AvailabilityMode "global"}}selected{{end}}>Global Default (Granted to all valid logins)</option>
+          </select>
+        </div>
+        <div class="form-group" style="flex: 1;">
+          <label for="edit_duration_{{$pg.ID}}">Grant Duration (Sec)</label>
+          <input type="number" id="edit_duration_{{$pg.ID}}" name="grant_duration_seconds" value="{{$pg.GrantDurationSeconds}}" min="60" required>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Configured Ports (TCP / UDP)</label>
+        <div id="ports-container-{{$pg.ID}}">
+          {{range $pg.Ports}}
+          <div class="flex-row form-group port-row">
+            <select name="port_protocol[]" style="width: 110px;">
+              <option value="tcp" {{if eq .Protocol "tcp"}}selected{{end}}>TCP</option>
+              <option value="udp" {{if eq .Protocol "udp"}}selected{{end}}>UDP</option>
+            </select>
+            <input type="number" name="port_number[]" min="1" max="65535" value="{{.Port}}" placeholder="Port (e.g. 22)" required style="flex: 1;">
+            <button type="button" class="btn btn-danger btn-sm" onclick="this.closest('.port-row').remove()">✕</button>
+          </div>
+          {{end}}
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="addPortRow('ports-container-{{$pg.ID}}')">+ Add Port</button>
+      </div>
+
+      <div class="flex-row">
+        <div class="form-group" style="flex: 1;">
+          <label style="display: flex; align-items: center; gap: 0.5rem; margin-top: 1.5rem;">
+            <input type="checkbox" name="allow_extend" value="1" {{if $pg.AllowExtend}}checked{{end}}>
+            <span>Allow Extensions</span>
+          </label>
+        </div>
+        <div class="form-group" style="flex: 1;">
+          <label for="edit_pg_max_ext_{{$pg.ID}}">Max Extensions</label>
+          <input type="number" id="edit_pg_max_ext_{{$pg.ID}}" name="max_extensions" min="0" value="{{if $pg.MaxExtensions}}{{$pg.MaxExtensions}}{{end}}" placeholder="Unlimited">
+        </div>
+      </div>
+
+      <div class="flex-row" style="margin-top: 1.5rem;">
+        <button type="button" class="btn btn-secondary" style="flex: 1;" data-modal-close>Cancel</button>
+        <button type="submit" class="btn btn-primary" style="flex: 1;">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+{{end}}
 
 <!-- Create Port Group Modal -->
 <div id="create-group-modal" class="modal-overlay" style="display: none;">

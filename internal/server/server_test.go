@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -291,5 +292,175 @@ func TestVisitorFullWorkflow(t *testing.T) {
 
 	if rec5.Code != http.StatusSeeOther || rec5.Header().Get("Location") != "/" {
 		t.Fatalf("expected redirect to / after revoke, got %d to %s", rec5.Code, rec5.Header().Get("Location"))
+	}
+}
+
+func TestAdminUpdateEntities(t *testing.T) {
+	srv, db, _ := setupTestServer(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	// 1. Create an admin user and session
+	passHash, _ := auth.HashAdminPassword("AdminPass123456!", 12)
+	admin := &models.AdminUser{
+		Username:     "admin",
+		PasswordHash: passHash,
+		Role:         "admin",
+		IsActive:     true,
+	}
+	if err := db.CreateAdminUser(ctx, admin); err != nil {
+		t.Fatalf("failed to create admin user: %v", err)
+	}
+
+	sessionToken := "admin-session-test-token"
+	sess := &models.AdminSession{
+		AdminUserID:      admin.ID,
+		SessionTokenHash: auth.HashToken(sessionToken),
+		LastActivityAt:   time.Now().UTC(),
+		ExpiresAt:        time.Now().UTC().Add(1 * time.Hour),
+		UserAgent:        "test-agent",
+		ClientIP:         "192.0.2.1",
+	}
+	if err := db.CreateAdminSession(ctx, sess); err != nil {
+		t.Fatalf("failed to create admin session: %v", err)
+	}
+	sessionCookie := &http.Cookie{Name: "funnel_admin_session", Value: sessionToken}
+	csrfToken := "test-csrf-token-12345"
+	csrfCookie := &http.Cookie{Name: "funnel_csrf", Value: csrfToken}
+
+	// 2. Pre-create a port group, access key, and allowed network
+	pg := &models.PortGroup{
+		Name:                 "Initial PG",
+		AvailabilityMode:     "key_only",
+		AllowExtend:          false,
+		GrantDurationSeconds: 1800,
+		IsActive:             true,
+		Ports:                []models.PortRule{{Protocol: "tcp", Port: 80}},
+	}
+	if err := db.CreatePortGroup(ctx, pg); err != nil {
+		t.Fatalf("failed to create port group: %v", err)
+	}
+
+	key := &models.AccessKey{
+		Name:             "Initial Key",
+		PasswordHash:     auth.HashAccessKey("test-secret-pepper", "oldpass"),
+		IsActive:         true,
+		AllowExtend:      false,
+		PortGroupIDs:     []int64{pg.ID},
+		CreatedByAdminID: &admin.ID,
+	}
+	if err := db.CreateAccessKey(ctx, key); err != nil {
+		t.Fatalf("failed to create access key: %v", err)
+	}
+
+	netRule := &models.AllowedNetwork{
+		Name:                 "Initial Net",
+		NetworkCIDR:          "10.0.0.0/8",
+		Mode:                 "login_required",
+		Scope:                "global",
+		GrantDurationSeconds: 1800,
+		IsActive:             true,
+		PortGroupIDs:         []int64{pg.ID},
+	}
+	if err := db.CreateAllowedNetwork(ctx, netRule); err != nil {
+		t.Fatalf("failed to create network rule: %v", err)
+	}
+
+	handler := srv.Handler()
+
+	// 3. Test Update Port Group
+	pgForm := url.Values{
+		"csrf_token":             {csrfToken},
+		"name":                   {"Updated PG"},
+		"description":            {"Updated Description"},
+		"availability_mode":      {"global"},
+		"grant_duration_seconds": {"7200"},
+		"allow_extend":           {"1"},
+		"max_extensions":         {"3"},
+		"port_protocol[]":        {"tcp", "udp"},
+		"port_number[]":          {"443", "53"},
+	}
+	reqPG := httptest.NewRequest("POST", fmt.Sprintf("/admin/port-groups/%d", pg.ID), strings.NewReader(pgForm.Encode()))
+	reqPG.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	reqPG.AddCookie(sessionCookie)
+	reqPG.AddCookie(csrfCookie)
+	recPG := httptest.NewRecorder()
+	handler.ServeHTTP(recPG, reqPG)
+
+	if recPG.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 redirect on port group update, got %d", recPG.Code)
+	}
+
+	updatedPG, err := db.GetPortGroupByID(ctx, pg.ID)
+	if err != nil {
+		t.Fatalf("failed to get updated port group: %v", err)
+	}
+	if updatedPG.Name != "Updated PG" || updatedPG.GrantDurationSeconds != 7200 || !updatedPG.AllowExtend {
+		t.Errorf("port group fields not properly updated: %+v", updatedPG)
+	}
+	if len(updatedPG.Ports) != 2 {
+		t.Errorf("expected 2 updated ports, got %d", len(updatedPG.Ports))
+	}
+
+	// 4. Test Update Access Key
+	keyForm := url.Values{
+		"csrf_token":           {csrfToken},
+		"name":                 {"Updated Key Name"},
+		"password":             {"newpassword123"},
+		"max_concurrent_ips":   {"5"},
+		"max_total_uses":       {"10"},
+		"max_duration_seconds": {"3600"},
+		"allow_extend":         {"1"},
+		"port_group_ids[]":     {fmt.Sprintf("%d", pg.ID)},
+	}
+	reqKey := httptest.NewRequest("POST", fmt.Sprintf("/admin/access-keys/%d", key.ID), strings.NewReader(keyForm.Encode()))
+	reqKey.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	reqKey.AddCookie(sessionCookie)
+	reqKey.AddCookie(csrfCookie)
+	recKey := httptest.NewRecorder()
+	handler.ServeHTTP(recKey, reqKey)
+
+	if recKey.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 redirect on access key update, got %d", recKey.Code)
+	}
+
+	updatedKey, err := db.GetAccessKeyByID(ctx, key.ID)
+	if err != nil {
+		t.Fatalf("failed to get updated access key: %v", err)
+	}
+	if updatedKey.Name != "Updated Key Name" || !updatedKey.AllowExtend {
+		t.Errorf("access key fields not properly updated: %+v", updatedKey)
+	}
+	expectedHash := auth.HashAccessKey("test-secret-pepper", "newpassword123")
+	if updatedKey.PasswordHash != expectedHash {
+		t.Errorf("expected updated password hash %s, got %s", expectedHash, updatedKey.PasswordHash)
+	}
+
+	// 5. Test Update Allowed Network
+	netForm := url.Values{
+		"csrf_token":             {csrfToken},
+		"name":                   {"Updated Office Network"},
+		"network_cidr":           {"192.168.1.0/24"},
+		"mode":                   {"always_allowed"},
+		"grant_duration_seconds": {"3600"},
+		"port_group_ids[]":       {fmt.Sprintf("%d", pg.ID)},
+	}
+	reqNet := httptest.NewRequest("POST", fmt.Sprintf("/admin/allowed-networks/%d", netRule.ID), strings.NewReader(netForm.Encode()))
+	reqNet.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	reqNet.AddCookie(sessionCookie)
+	reqNet.AddCookie(csrfCookie)
+	recNet := httptest.NewRecorder()
+	handler.ServeHTTP(recNet, reqNet)
+
+	if recNet.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 redirect on network update, got %d", recNet.Code)
+	}
+
+	updatedNet, err := db.GetAllowedNetworkByID(ctx, netRule.ID)
+	if err != nil {
+		t.Fatalf("failed to get updated network: %v", err)
+	}
+	if updatedNet.Name != "Updated Office Network" || updatedNet.NetworkCIDR != "192.168.1.0/24" || updatedNet.Mode != "always_allowed" {
+		t.Errorf("network fields not properly updated: %+v", updatedNet)
 	}
 }
