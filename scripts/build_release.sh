@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="0.1.0"
+VERSION="${1:-${VERSION:-0.2.0}}"
 DIST_DIR="dist"
 LDFLAGS="-s -w -X github.com/AhmadShamli/Funnel/internal/version.Version=${VERSION}"
 
@@ -12,9 +12,6 @@ PLATFORMS=(
   "linux/amd64"
   "linux/arm64"
   "linux/arm/7"
-  "darwin/amd64"
-  "darwin/arm64"
-  "windows/amd64"
 )
 
 for PLATFORM in "${PLATFORMS[@]}"; do
@@ -59,7 +56,7 @@ for PLATFORM in "${PLATFORMS[@]}"; do
 done
 
 cd "${DIST_DIR}"
-sha256sum * > checksums.txt
+sha256sum funnel-*.tar.gz > checksums.txt
 cd ..
 
 echo "==> Build completed successfully! Generated artifacts in ${DIST_DIR}:"

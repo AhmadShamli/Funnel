@@ -3,7 +3,7 @@ package version
 // Version is the current semantic version of Funnel.
 // Can be set at compile time via:
 // -ldflags="-X github.com/AhmadShamli/Funnel/internal/version.Version=x.y.z"
-var Version = "0.1.0"
+var Version = "0.2.0"
 
 const (
 	// AppName is the official display name of the application.

@@ -35,8 +35,8 @@ func TestEmbeddedTemplates(t *testing.T) {
 			if !strings.Contains(body, "https://github.com/AhmadShamli/Funnel") {
 				t.Errorf("template %s missing github repository link", name)
 			}
-			if !strings.Contains(body, "v0.1.0") {
-				t.Errorf("template %s missing version 'v0.1.0'", name)
+			if !strings.Contains(body, "v0.2.0") {
+				t.Errorf("template %s missing version 'v0.2.0'", name)
 			}
 		}
 		if name == "admin_keys" {
