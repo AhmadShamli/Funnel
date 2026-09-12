@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initCountdownTimers();
   initPasswordVisibilityToggles();
   initModals();
+  initPortAccessibilityChecker();
 });
 
 // Countdown Timer functionality
@@ -128,3 +129,111 @@ function addPortRow(containerId) {
   `;
   container.appendChild(row);
 }
+
+// Periodic port accessibility testing for active visitor sessions
+function initPortAccessibilityChecker() {
+  const portContainer = document.getElementById('visitor-ports-list');
+  if (!portContainer) return;
+
+  const portElements = portContainer.querySelectorAll('.port-item[data-port]');
+  if (portElements.length === 0) return;
+
+  const metaEl = document.getElementById('port-check-status-meta');
+  const recheckBtn = document.getElementById('recheck-ports-btn');
+  let isChecking = false;
+  let intervalId = null;
+
+  function updatePortStatus(port, protocol, open, status, message) {
+    const protoLower = (protocol || 'tcp').toLowerCase();
+    const item = Array.from(portElements).find(el => {
+      const elPort = el.getAttribute('data-port');
+      const elProto = (el.getAttribute('data-protocol') || 'tcp').toLowerCase();
+      return elPort === String(port) && elProto === protoLower;
+    });
+
+    if (!item) return;
+
+    const badge = item.querySelector('.port-status-badge');
+    if (!badge) return;
+
+    badge.className = 'port-status-badge';
+    const textEl = badge.querySelector('.status-indicator-text');
+
+    if (open) {
+      badge.classList.add('status-open');
+      badge.setAttribute('title', message || `Port ${port}/${protocol} is open and accessible`);
+      if (textEl) textEl.textContent = 'Accessible';
+    } else if (status === 'unreachable') {
+      badge.classList.add('status-unreachable');
+      badge.setAttribute('title', message || `Port ${port}/${protocol} is unreachable`);
+      if (textEl) textEl.textContent = 'Unreachable';
+    } else {
+      badge.classList.add('status-closed');
+      badge.setAttribute('title', message || `Port ${port}/${protocol} is closed (no service listening)`);
+      if (textEl) textEl.textContent = 'Closed';
+    }
+  }
+
+  async function checkPorts() {
+    if (isChecking) return;
+    isChecking = true;
+
+    if (metaEl) metaEl.textContent = 'Testing ports...';
+    if (recheckBtn) recheckBtn.setAttribute('disabled', 'disabled');
+
+    try {
+      const res = await fetch('/access/ports/check', {
+        headers: { 'Accept': 'application/json' },
+        credentials: 'same-origin'
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        if (metaEl) metaEl.textContent = 'Session ended';
+        if (intervalId) clearInterval(intervalId);
+        const refreshNotice = document.getElementById('session-expired-notice');
+        if (refreshNotice) refreshNotice.style.display = 'block';
+        return;
+      }
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      if (data && Array.isArray(data.ports)) {
+        data.ports.forEach(p => {
+          updatePortStatus(p.port, p.protocol, p.open, p.status, p.message);
+        });
+
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        if (metaEl) metaEl.textContent = `Tested ${timeStr}`;
+      }
+    } catch (err) {
+      if (metaEl) metaEl.textContent = 'Check paused';
+    } finally {
+      isChecking = false;
+      if (recheckBtn) recheckBtn.removeAttribute('disabled');
+    }
+  }
+
+  // Initial check immediately on load
+  checkPorts();
+
+  // Periodically check every 10 seconds
+  intervalId = setInterval(checkPorts, 10000);
+
+  // Manual re-check trigger
+  if (recheckBtn) {
+    recheckBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      checkPorts();
+    });
+  }
+
+  // Cleanup if window unloads
+  window.addEventListener('beforeunload', () => {
+    if (intervalId) clearInterval(intervalId);
+  });
+}
+

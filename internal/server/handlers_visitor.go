@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -130,6 +132,45 @@ func (h *VisitorHandlers) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = h.tm.Render(w, "visitor_status", data)
+}
+
+func (h *VisitorHandlers) HandleCheckPorts(w http.ResponseWriter, r *http.Request) {
+	clientIP := GetClientIP(r)
+	now := time.Now().UTC()
+
+	var tokenCookie string
+	if c, err := r.Cookie("funnel_grant"); err == nil {
+		tokenCookie = c.Value
+	}
+
+	result, err := h.engine.EvaluateVisitor(r.Context(), clientIP, tokenCookie, now)
+	if err != nil || !result.HasActiveGrant {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"error":     "No active access grant found",
+			"active":    false,
+			"client_ip": clientIP.String(),
+			"ports":     []PortCheckStatus{},
+		})
+		return
+	}
+
+	candidates := GetProbeCandidates(r.Host, h.cfg)
+
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	portStatuses := CheckPortsConcurrently(ctx, result.AllowedPorts, candidates, 500*time.Millisecond)
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"active":            true,
+		"client_ip":         clientIP.String(),
+		"remaining_seconds": result.RemainingSeconds,
+		"checked_at":        now.Format(time.RFC3339),
+		"ports":             portStatuses,
+	})
 }
 
 func (h *VisitorHandlers) HandleRevoke(w http.ResponseWriter, r *http.Request) {

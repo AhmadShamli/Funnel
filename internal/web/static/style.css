@@ -269,18 +269,101 @@ input:focus, select:focus, textarea:focus {
 .ports-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.6rem;
   margin: 1rem 0;
 }
 
-.port-badge {
+.port-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
   background: var(--bg-elevated);
   border: 1px solid var(--border-color);
-  color: #a7f3d0;
-  padding: 0.35rem 0.75rem;
   border-radius: var(--radius-sm);
+  padding: 0.35rem 0.6rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.port-item:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.port-badge {
+  color: #a7f3d0;
   font-family: monospace;
   font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.port-check-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.port-check-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.port-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  transition: all 0.2s ease;
+}
+
+.status-indicator-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: currentColor;
+  flex-shrink: 0;
+}
+
+.port-status-badge.status-open {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.port-status-badge.status-closed {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.port-status-badge.status-unreachable {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.port-status-badge.status-checking {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.port-status-badge.status-checking .status-indicator-dot {
+  animation: pulse-dot 1.2s infinite ease-in-out;
+}
+
+@keyframes pulse-dot {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
 }
 
 /* Admin Portal Layout */

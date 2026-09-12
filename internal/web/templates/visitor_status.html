@@ -33,10 +33,26 @@
     </div>
 
     <div style="margin-bottom: 1.5rem;">
-      <label>Approved Ports</label>
-      <div class="ports-grid">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+        <label style="margin-bottom: 0;">Approved Ports</label>
+        {{if .AllowedPorts}}
+        <div class="port-check-controls">
+          <span id="port-check-status-meta" class="port-check-meta">Testing ports...</span>
+          <button type="button" id="recheck-ports-btn" class="btn btn-secondary btn-sm" title="Re-test open ports now">
+            ⟳ Re-test
+          </button>
+        </div>
+        {{end}}
+      </div>
+      <div class="ports-grid" id="visitor-ports-list">
         {{range .AllowedPorts}}
-        <div class="port-badge">✓ {{.Port}}/{{.Protocol}}</div>
+        <div class="port-item" data-port="{{.Port}}" data-protocol="{{.Protocol}}">
+          <span class="port-badge">✓ {{.Port}}/{{.Protocol}}</span>
+          <span class="port-status-badge status-checking" title="Checking port accessibility...">
+            <span class="status-indicator-dot"></span>
+            <span class="status-indicator-text">Checking...</span>
+          </span>
+        </div>
         {{else}}
         <div style="color: var(--text-muted); font-size: 0.9rem;">No specific individual ports (Global network policy)</div>
         {{end}}

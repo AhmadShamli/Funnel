@@ -103,6 +103,8 @@ func (s *Server) setupRoutes() {
 	r.Get("/", visitorH.HandleIndex)
 	r.Post("/access", visitorH.HandleAccess)
 	r.Get("/access/current", visitorH.HandleStatus)
+	r.Get("/access/ports/check", visitorH.HandleCheckPorts)
+	r.Get("/access/check-ports", visitorH.HandleCheckPorts)
 	r.Post("/access/revoke", visitorH.HandleRevoke)
 	r.Post("/access/extend", visitorH.HandleExtend)
 
