@@ -105,6 +105,21 @@ For standalone dedicated servers, VPS instances, or home labs running Debian, Ub
 4. **Complete initial setup**:
    Open `http://127.0.0.1:8000/setup` (or via SSH port forward: `ssh -L 8000:127.0.0.1:8000 user@your-server`) to create your administrator account.
 
+#### Upgrading Funnel
+
+To upgrade an existing installation, re-run `install.sh` (or pass `--upgrade`):
+```bash
+# Automated upgrade to the latest GitHub release (includes database backup & validation)
+sudo bash deploy/install.sh --upgrade
+
+# Upgrade to a specific version:
+sudo bash deploy/install.sh --version v0.2.0
+
+# Check installed version vs latest available release without upgrading:
+bash deploy/install.sh --check
+```
+*The installer automatically quiesces `funnel.service`, creates a safety backup of `/var/lib/funnel/funnel.db` and configuration in `/var/lib/funnel/backups/`, verifies the candidate binary before swapping, updates systemd and sudoers definitions, restarts the service, and automatically rolls back if the upgrade fails startup checks.*
+
 ---
 
 ## 🌐 Reverse Proxy Configuration
