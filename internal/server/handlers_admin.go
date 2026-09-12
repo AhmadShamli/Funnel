@@ -473,7 +473,13 @@ func (h *AdminHandlers) HandleGrantsRevoke(w http.ResponseWriter, r *http.Reques
 // --- Firewalls ---
 
 func (h *AdminHandlers) HandleFirewallsGet(w http.ResponseWriter, r *http.Request) {
-	backends := h.factory.DetectAll(r.Context())
+	var backends []firewall.BackendInfo
+	resp, err := h.helper.Execute(r.Context(), firewall.HelperRequest{Action: "detect"})
+	if err == nil && resp != nil && len(resp.Backends) > 0 {
+		backends = resp.Backends
+	} else {
+		backends = h.factory.DetectAll(r.Context())
+	}
 
 	rulesResp, _ := h.helper.Execute(r.Context(), firewall.HelperRequest{Action: "list_rules"})
 	var activeRules []firewall.ActiveRule
@@ -484,7 +490,7 @@ func (h *AdminHandlers) HandleFirewallsGet(w http.ResponseWriter, r *http.Reques
 	data := h.baseData(r, "firewalls")
 	data["Backends"] = backends
 	data["ActiveRules"] = activeRules
-	data["ActiveBackend"] = h.cfg.FirewallBackend
+	data["ActiveBackend"] = h.helper.Backend()
 
 	_ = h.tm.Render(w, "admin_firewalls", data)
 }

@@ -43,7 +43,7 @@
           {{end}}
         </td>
         <td style="font-size: 0.85rem; color: var(--text-secondary);">
-          {{if .Error}}<span style="color: #f87171;">{{.Error}}</span>{{else}}Operational{{end}}
+          {{if .Error}}<span style="color: #f87171;">{{.Error}}</span>{{else if not .Installed}}<span>Not installed</span>{{else}}Operational{{end}}
         </td>
       </tr>
       {{end}}

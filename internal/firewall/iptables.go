@@ -47,12 +47,12 @@ func (a *IptablesAdapter) initChains(ctx context.Context) error {
 			continue
 		}
 		// Create FUNNEL_INPUT chain if it doesn't exist
-		a.detector.RunCommand(ctx, bin, "-N", "FUNNEL_INPUT")
+		_, _ = a.detector.RunCommand(ctx, bin, "-N", "FUNNEL_INPUT")
 		// Ensure jump from INPUT exists
-		a.detector.RunCommand(ctx, bin, "-C", "INPUT", "-j", "FUNNEL_INPUT")
-		// If check failed, insert rule at beginning of INPUT
 		if _, err := a.detector.RunCommand(ctx, bin, "-C", "INPUT", "-j", "FUNNEL_INPUT"); err != nil {
-			a.detector.RunCommand(ctx, bin, "-I", "INPUT", "1", "-j", "FUNNEL_INPUT")
+			if out, err := a.detector.RunCommand(ctx, bin, "-I", "INPUT", "1", "-j", "FUNNEL_INPUT"); err != nil {
+				return fmt.Errorf("failed to configure %s jump rule: %w (output: %s)", bin, err, strings.TrimSpace(string(out)))
+			}
 		}
 	}
 	return nil

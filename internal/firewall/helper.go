@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/netip"
 	"os"
@@ -52,6 +53,11 @@ func NewHelperClient(transport, socketPath, backend string, factory *Factory) *H
 		factory:    factory,
 		backend:    backend,
 	}
+}
+
+// Backend returns the active configured backend name.
+func (c *HelperClient) Backend() string {
+	return c.backend
 }
 
 // Execute sends an IPC request and returns the response.
@@ -131,6 +137,7 @@ func (c *HelperClient) executeSudo(ctx context.Context, req HelperRequest) (*Hel
 	cmd.Stderr = &errBuf
 
 	if err := cmd.Run(); err != nil {
+		log.Printf("[HELPER] Sudo execution failed (%v): stderr=%q, stdout=%q; falling back to internal", err, strings.TrimSpace(errBuf.String()), strings.TrimSpace(outBuf.String()))
 		// Fallback to internal if sudo not permitted or during testing
 		return c.executeInternal(ctx, req)
 	}
