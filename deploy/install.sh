@@ -17,13 +17,13 @@ fi
 echo "[1/6] Detecting distribution and installing host prerequisites..."
 if command -v apt-get >/dev/null 2>&1; then
     apt-get update -qq
-    apt-get install -y -qq nftables sudo util-linux curl
+    apt-get install -y -qq nftables sudo util-linux curl tar
 elif command -v dnf >/dev/null 2>&1; then
-    dnf install -y -q nftables sudo util-linux curl
+    dnf install -y -q nftables sudo util-linux curl tar
 elif command -v pacman >/dev/null 2>&1; then
-    pacman -Sy --noconfirm nftables sudo util-linux curl
+    pacman -Sy --noconfirm nftables sudo util-linux curl tar
 else
-    echo "[WARN] Unrecognized package manager. Ensure nftables and sudo are installed."
+    echo "[WARN] Unrecognized package manager. Ensure nftables, sudo, and tar are installed."
 fi
 
 # 2. Create System User & Group
@@ -44,17 +44,135 @@ chmod 0750 /var/lib/funnel /run/funnel
 echo "[3/6] Installing Funnel static binary..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_SOURCE="${SCRIPT_DIR}/../bin/funnel"
+REPO="AhmadShamli/Funnel"
+
+ARCH_RAW="$(uname -m)"
+case "${ARCH_RAW}" in
+    x86_64|amd64)
+        ARCH="amd64"
+        ;;
+    aarch64|arm64)
+        ARCH="arm64"
+        ;;
+    armv7*|armhf)
+        ARCH="armv7"
+        ;;
+    *)
+        ARCH=""
+        ;;
+esac
+
+INSTALLED=false
 
 if [ -f "${BIN_SOURCE}" ]; then
+    echo "[INFO] Found pre-compiled binary at ${BIN_SOURCE}."
     cp "${BIN_SOURCE}" /usr/local/bin/funnel
+    INSTALLED=true
 else
-    echo "[INFO] Building static binary directly..."
-    if command -v go >/dev/null 2>&1; then
-        (cd "${SCRIPT_DIR}/.." && CGO_ENABLED=0 go build -ldflags="-s -w" -o /usr/local/bin/funnel ./cmd/funnel)
-    else
-        echo "[ERROR] Compiled binary not found and 'go' compiler is not installed."
-        exit 1
+    INSTALL_METHOD="${FUNNEL_INSTALL_METHOD:-${INSTALL_METHOD:-}}"
+
+    if [ -z "${INSTALL_METHOD}" ]; then
+        if [ -t 0 ]; then
+            echo ""
+            echo "Funnel static binary was not found at ${BIN_SOURCE}."
+            echo "Select how you would like to proceed:"
+            echo "  1) Download latest binary from GitHub release (or use bundled dist archive) [Default]"
+            echo "  2) Install Go compiler & dependencies, then build from source"
+            read -r -p "Enter choice [1 or 2] (default: 1): " USER_CHOICE
+            case "${USER_CHOICE}" in
+                2|"build"|"source")
+                    INSTALL_METHOD="build"
+                    ;;
+                *)
+                    INSTALL_METHOD="download"
+                    ;;
+            esac
+        else
+            echo "[INFO] Non-interactive session detected. Defaulting to downloading pre-compiled release."
+            INSTALL_METHOD="download"
+        fi
     fi
+
+    if [ "${INSTALL_METHOD}" = "download" ]; then
+        # Check bundled dist archive first
+        if [ -n "${ARCH}" ]; then
+            DIST_MATCH="$(ls -1 "${SCRIPT_DIR}/../dist/"*"-linux-${ARCH}.tar.gz" 2>/dev/null | sort -V | tail -n1 || true)"
+            if [ -n "${DIST_MATCH}" ] && [ -f "${DIST_MATCH}" ]; then
+                echo "[INFO] Found bundled release archive for ${ARCH} in dist/ (${DIST_MATCH##*/}). Extracting..."
+                TMP_D="$(mktemp -d)"
+                if tar -xzf "${DIST_MATCH}" -C "${TMP_D}" 2>/dev/null; then
+                    FOUND_BIN="$(find "${TMP_D}" -type f -name funnel | head -n 1)"
+                    if [ -n "${FOUND_BIN}" ] && [ -f "${FOUND_BIN}" ]; then
+                        cp "${FOUND_BIN}" /usr/local/bin/funnel
+                        INSTALLED=true
+                    fi
+                fi
+                rm -rf "${TMP_D}"
+            fi
+        fi
+
+        # If not found in dist, download from GitHub Releases
+        if [ "${INSTALLED}" = false ] && [ -n "${ARCH}" ] && command -v curl >/dev/null 2>&1; then
+            echo "[INFO] Attempting to download latest release from GitHub (${REPO}) for ${ARCH}..."
+            TMP_D="$(mktemp -d)"
+            EFFECTIVE_URL="$(curl -sIL -o /dev/null -w '%{url_effective}' "https://github.com/${REPO}/releases/latest" 2>/dev/null || true)"
+            RELEASE_TAG="$(basename "${EFFECTIVE_URL}")"
+            if [ -z "${RELEASE_TAG}" ] || [ "${RELEASE_TAG}" = "latest" ] || [ "${RELEASE_TAG}" = "releases" ]; then
+                RELEASE_TAG="v0.2.0"
+            fi
+
+            DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${RELEASE_TAG}/funnel-${RELEASE_TAG}-linux-${ARCH}.tar.gz"
+            echo "[INFO] Downloading from ${DOWNLOAD_URL}..."
+            if curl -fsSL "${DOWNLOAD_URL}" -o "${TMP_D}/funnel.tar.gz" 2>/dev/null; then
+                if tar -xzf "${TMP_D}/funnel.tar.gz" -C "${TMP_D}" 2>/dev/null; then
+                    FOUND_BIN="$(find "${TMP_D}" -type f -name funnel | head -n 1)"
+                    if [ -n "${FOUND_BIN}" ] && [ -f "${FOUND_BIN}" ]; then
+                        cp "${FOUND_BIN}" /usr/local/bin/funnel
+                        INSTALLED=true
+                        echo "[INFO] Successfully installed pre-compiled Funnel ${RELEASE_TAG} from GitHub releases."
+                    fi
+                fi
+            else
+                echo "[WARN] Could not download release archive from GitHub. Falling back to Go compiler..."
+            fi
+            rm -rf "${TMP_D}"
+        fi
+
+        if [ "${INSTALLED}" = false ]; then
+            echo "[WARN] Could not obtain pre-compiled release. Falling back to building from source..."
+            INSTALL_METHOD="build"
+        fi
+    fi
+
+    if [ "${INSTALL_METHOD}" = "build" ]; then
+        if ! command -v go >/dev/null 2>&1; then
+            echo "[INFO] Go compiler not detected. Installing Go compiler and build dependencies..."
+            if command -v apt-get >/dev/null 2>&1; then
+                apt-get update -qq
+                apt-get install -y -qq golang-go git
+            elif command -v dnf >/dev/null 2>&1; then
+                dnf install -y -q golang git
+            elif command -v yum >/dev/null 2>&1; then
+                yum install -y -q golang git
+            elif command -v pacman >/dev/null 2>&1; then
+                pacman -Sy --noconfirm go git
+            elif command -v apk >/dev/null 2>&1; then
+                apk add --no-cache go git
+            else
+                echo "[ERROR] Unsupported package manager. Please install Go manually."
+                exit 1
+            fi
+        fi
+
+        echo "[INFO] Building static binary directly with go compiler..."
+        (cd "${SCRIPT_DIR}/.." && CGO_ENABLED=0 go build -ldflags="-s -w" -o /usr/local/bin/funnel ./cmd/funnel)
+        INSTALLED=true
+    fi
+fi
+
+if [ ! -f /usr/local/bin/funnel ]; then
+    echo "[ERROR] Funnel binary could not be installed at /usr/local/bin/funnel."
+    exit 1
 fi
 chmod +x /usr/local/bin/funnel
 
