@@ -1,156 +1,214 @@
 # ⚡ Funnel
 
-> Secure, lightweight, high-performance web-authorized port access for Linux.
+**On-demand, temporary firewall port access for your servers via a simple web interface.**
 
-Funnel compiles to a single standalone static Go binary that grants a visitor's detected public IPv4 or IPv6 address temporary access to approved network ports.
+Instead of exposing management ports (SSH, databases, staging tools, internal dashboards) to the entire public internet 24/7 or wrestling with complicated VPN profiles on every visitor's device, **Funnel** gives you instant, web-authenticated access on demand.
 
-Access is granted under two authorization modes:
-1. **Always-Allowed**: Automated grants when an administrator has marked an IP/CIDR as always allowed.
-2. **Password-Only Authenticated**: Visitor enters a valid access password associated with an administrator-managed access key. Visitors are anonymous and do not register or provide usernames.
+A user visits your Funnel URL in their browser, enters an access password, and their detected public IP address is immediately authorized on the host firewall for a set duration. When time runs out or the user disconnects, the firewall rule automatically closes.
 
 ---
 
-## Key Features
+## 🎯 How It Works
 
-- **Single Standalone Static Binary**: Zero Python or runtime dependencies on the host, embedded zero-CDN HTML/CSS/JS assets, instant sub-second startup, ~14MB binary, and tiny Docker image (~35MB).
-- **Anonymous Visitor Access**: Visitors enter only an access password. Passwords are evaluated using keyed HMAC-SHA256 with an indexed O(1) database lookup and constant-time comparison (<0.01ms CPU, 0 MB RAM), completely preventing CPU/memory exhaustion attacks.
-- **Shared NAT & Multi-User Privacy**: Multiple visitors behind the same public NAT/mobile CGNAT authenticate independently. The visitor view strictly shows only the current visitor's granted ports and duration, never disclosing peer sessions or open ports on that IP.
-- **Immediate Port Delta Sync (Refcounting)**: When a grant expires or is revoked, Funnel queries remaining active grants for that IP and removes only the firewall port rules that no longer have any active claim from any user.
-- **Dual-Mode Deployment**: First-class support for both **Docker** (bridging host network namespace via `nsenter`) and **Bare-Metal Linux** (native systemd service with locked-down sudoers).
-- **Comprehensive Linux Firewall Backends**:
-  - `nftables` (`table inet funnel`) with dual-stack IPv4/IPv6 support (Reference backend)
-  - `iptables` / `ip6tables` (`FUNNEL_INPUT` chain)
-  - `ufw`
-  - `firewalld`
-  - `mock` in-memory adapter for automated CI/CD and non-root test coverage.
-- **Startup Recovery & Reconciliation**: Scans SQLite on service start, transitions offline-expired grants, flushes stale rules, and atomically re-applies active firewall rules.
-- **Two-Tier Brute-Force Defense**:
-  - **Level 1**: 5 attempts/minute per IP with progressive exponential backoff (30s to 300s). Confined strictly to the offending IP.
-  - **Level 2 (Distributed Circuit Breaker)**: When failed attempts span multiple distinct IPs exceeding threshold (default 5 IPs), pauses password-only logins globally for a lockout cooldown while keeping active grants open.
-- **Granular Extension Policy**: Configurable `allow_extend` on keys, port groups, users, and networks; `max_extensions` limits; password challenge prompt for visitors; and hard cumulative duration ceilings bounded by initial duration.
-- **First-Run Bootstrap Wizard**: Web setup wizard at `/setup` protected by a one-time random 32-character hex bootstrap token logged to stdout. Permanently disables itself once the first administrator is created.
-
----
-
-## Architecture Overview
-
+### For End Users
 ```
-                      +-----------------------------+
-                      |   Visitor / Admin Browser   |
-                      +--------------+--------------+
-                                     |
-                                   HTTPS
-                                     |
-                      +--------------v--------------+
-                      | Reverse Proxy / Cloudflare  |
-                      +--------------+--------------+
-                                     | Forwarded Headers
-                      +--------------v--------------+
-                      |     Funnel Web Service      |
-                      |  (Unprivileged: nonroot/65532)|
-                      | - Safe Client IP Resolver   |
-                      | - Keyed HMAC-SHA256 Auth    |
-                      | - SQLite WAL Database       |
-                      | - Embedded Worker Goroutine |
-                      +--------------+--------------+
-                                     |
-                   Typed IPC: Sudo CLI or Unix Socket
-                                     |
-                      +--------------v--------------+
-                      |   Privileged Helper Engine  |
-                      | (nsenter --net=/proc/1/ns/net)|
-                      +--------------+--------------+
-                                     |
-                      +--------------v--------------+
-                      | Host Firewall: inet funnel  |
-                      +-----------------------------+
+   1. Visit Web Page       2. Enter Access Password       3. Connect Directly
++----------------------+     +---------------------+     +--------------------+
+|  Detected IP:        |     |                     |     |  ✅ Access Active   |
+|  203.0.113.42        | --> |  [ Password ]       | --> |  Ports: 22, 5432   |
+|                      |     |  [ Grant Access ]   |     |  Time Left: 59:42  |
++----------------------+     +---------------------+     +--------------------+
+                                                         Run: ssh user@server
 ```
+1. **Visit your Funnel link** (e.g., `https://access.yourcompany.com`).
+2. **Enter an access password** provided by your server administrator. No username, registration, or software installation required.
+3. **Connect directly**: The firewall grants your public IP address access to approved ports. A live countdown timer shows how long your session remains active.
+4. **Extend or Disconnect**: Extend your session if you need more time, or click **Disconnect** to close your ports immediately.
+5. **Complete Privacy**: Users sharing a public office NAT or mobile carrier IP (CGNAT) authenticate independently. You will never see other active sessions or open ports on your network.
 
 ---
 
-## Quickstart: Docker Compose
+### For Server Administrators
+Through an embedded web dashboard at `/admin`, administrators have complete control:
+- **Port Groups**: Define reusable port bundles (e.g. `SSH: 22/tcp`, `Postgres: 5432/tcp`, `Dev Web: 8080/tcp`).
+- **Access Keys**: Create labeled passwords (e.g. *"Dev Team"*, *"Contractor Bob"*, *"Staging Testing"*). Optionally set expiration dates, max concurrent IPs, or single-use limits.
+- **Allowed Networks (CIDR Policies)**: Whitelist office or home IP ranges to be **Always-Allowed** (automatic access without needing a password) or enforce password requirements.
+- **Immediate Port Refcounting**: If two people behind the same office IP have active sessions, closing one session only removes ports that are no longer needed by anyone.
+- **Automatic Reboot Reconciliation**: If your server reboots, Funnel immediately scans active grants and re-applies their firewall rules, while purging any expired ones.
+- **Brute-Force & Botnet Protection**: Built-in two-tier rate limiting slows down attackers on a single IP and trips a global circuit breaker if password spraying occurs across multiple IPs.
+- **Zero-Dependency Single Binary**: Pure Go executable with zero host Python, C compiler, or npm dependencies. Ships with embedded HTML/CSS/JS.
 
-1. Clone the repository and copy the environment configuration:
+---
+
+## 🚀 Quickstart
+
+### Option A: Docker Deployment (Recommended)
+
+Funnel packages both the web server and the firewall engine in a single container. It connects to your existing reverse proxy network while securely managing the host's Linux firewall via standard kernel capabilities.
+
+1. **Clone and create your configuration**:
    ```bash
    git clone https://github.com/AhmadShamli/Funnel.git
    cd Funnel
    cp .env.example .env
    ```
 
-2. Edit `.env` to configure your settings (e.g. `SECRET_KEY`, `EXTERNAL_NETWORK_NAME`).
+2. **Configure your `.env`**:
+   At minimum, set a secure random secret and verify your external proxy network:
+   ```env
+   SECRET_KEY=generate-a-secure-random-secret-key-here
+   EXTERNAL_NETWORK_NAME=web_proxy
+   ```
+   > [!TIP]
+   > Funnel automatically runs as an unprivileged system user inside the container. If you want to match a specific host UID/GID (e.g. `1000`), you can set `FUNNEL_UID=1000` in `.env`.
 
-3. Start the container:
+3. **Start Funnel**:
    ```bash
    docker compose up -d
    ```
 
-4. Retrieve the initial setup token from stdout:
+4. **Retrieve your one-time setup token**:
    ```bash
    docker compose logs funnel | grep -A 4 "FUNNEL BOOTSTRAP"
    ```
 
-5. Open `http://<your-server-or-domain>/setup`, enter the bootstrap token, and create your administrator account.
+5. **Complete initial setup**:
+   Navigate to `http://<your-domain>/setup`, enter the token from stdout, and create your master administrator account.
 
 ---
 
-## Quickstart: Bare-Metal Linux (Systemd)
+### Option B: Bare-Metal Linux (Systemd)
 
-Funnel includes an idempotent installer script for bare-metal and VM environments running Debian, Ubuntu, RHEL, Rocky Linux, Fedora, or Arch Linux:
+For standalone dedicated servers, VPS instances, or home labs running Debian, Ubuntu, RHEL, Rocky Linux, Fedora, or Arch Linux without Docker:
 
-1. Build or download the static binary:
+1. **Build or download the standalone static binary**:
    ```bash
    CGO_ENABLED=0 go build -ldflags="-s -w" -o ./bin/funnel ./cmd/funnel
    ```
 
-2. Run the automated installer as root:
+2. **Run the automated installer as root**:
    ```bash
    sudo bash deploy/install.sh
    ```
+   *The installer automatically creates the dedicated `funnel` system user, configures locked-down sudoers rules for firewall manipulation, deploys `/etc/systemd/system/funnel.service`, and starts the service on `127.0.0.1:8000`.*
 
-3. The installer creates system user `funnel`, installs `/etc/sudoers.d/funnel`, creates `/etc/funnel/funnel.env`, and starts `funnel.service`.
-
-4. Retrieve the bootstrap setup token:
+3. **Retrieve your initial setup token**:
    ```bash
-   journalctl -u funnel.service -n 25 --no-pager
+   sudo journalctl -u funnel.service -n 25 --no-pager
    ```
 
-5. Navigate to `http://127.0.0.1:8000/setup` to complete setup.
+4. **Complete initial setup**:
+   Open `http://127.0.0.1:8000/setup` (or via SSH port forward: `ssh -L 8000:127.0.0.1:8000 user@your-server`) to create your administrator account.
 
 ---
 
-## Reverse Proxy Integration
+## 🌐 Reverse Proxy Configuration
 
-Funnel is designed to run behind your existing reverse proxy. Example configurations are provided in `deploy/`:
-- **Nginx**: [`deploy/nginx.conf.example`](file:///workspace/Funnel/deploy/nginx.conf.example)
-- **Caddy**: [`deploy/caddy.conf.example`](file:///workspace/Funnel/deploy/caddy.conf.example)
+Funnel expects to run behind a reverse proxy (such as Nginx, Caddy, or Cloudflare) that terminates TLS.
 
-Ensure that your reverse proxy forwards `X-Forwarded-For` or `Forwarded` headers, and that its IP is included in `TRUSTED_PROXIES` in `.env`.
+### Nginx
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name access.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/access.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/access.example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+### Caddy
+```caddy
+access.example.com {
+    reverse_proxy 127.0.0.1:8000
+}
+```
+
+> [!IMPORTANT]
+> In your `.env` file, ensure `TRUSTED_PROXIES` includes the internal IP or subnet of your reverse proxy (e.g. `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.1/32`). This guarantees Funnel resolves the real visitor IP and prevents header spoofing.
 
 ---
 
-## CLI Reference
+## 🛡️ Supported Linux Firewall Engines
 
-The compiled `funnel` binary provides subcommands:
+Funnel works with modern and legacy Linux firewall frameworks:
 
-- `funnel serve`: Starts the web server, background reconciliation worker, and helper transport (default).
-- `funnel helper exec`: Accepts typed JSON from stdin to execute privileged firewall mutations.
-- `funnel helper daemon --socket <path>`: Runs a root Unix domain socket daemon.
-- `funnel health`: Performs a health check against the local running service (exits 0 on success).
-- `funnel version`: Displays version and build information.
+| Firewall Engine | Backend Identifier | Status & Description |
+| :--- | :--- | :--- |
+| **`nftables`** | `nftables` | **Recommended**. Atomic ruleset updates targeting `table inet funnel` with native dual-stack IPv4 and IPv6 support. |
+| **`iptables`** | `iptables` | Legacy Linux support using dedicated `FUNNEL_INPUT` chains in `iptables` and `ip6tables`. |
+| **`ufw`** | `ufw` | Ubuntu/Debian Uncomplicated Firewall integration. |
+| **`firewalld`** | `firewalld` | Red Hat / Rocky / Fedora Rich Rule integration. |
+| **`mock`** | `mock` | In-memory simulator for non-root local testing and automated CI/CD. |
+
+By default, Funnel uses `FIREWALL_BACKEND=auto`, automatically probing and selecting the best available driver on your system in order of preference.
 
 ---
 
-## Running the Automated Test Suite
+## ⚙️ Configuration Reference
 
-Funnel uses the in-memory `MockFirewallAdapter` and pure-Go SQLite driver for complete unit and integration test coverage without requiring root privileges:
+All settings can be configured via environment variables or a `.env` file in the working directory:
+
+| Environment Variable | Default | Description |
+| :--- | :--- | :--- |
+| `FUNNEL_PORT` | `8000` | HTTP port the web server listens on. |
+| `FUNNEL_HOST` | `127.0.0.1` (native) / `0.0.0.0` (Docker) | Bind address for incoming HTTP traffic. |
+| `SECRET_KEY` | `(randomized)` | Pepper for HMAC-SHA256 password hashing and session signing. |
+| `COOKIE_SECURE` | `false` | Set to `true` when serving behind an HTTPS reverse proxy. |
+| `PROXY_MODE` | `reverse_proxy` | Ingress client IP strategy (`reverse_proxy`, `cloudflare`, or `direct`). |
+| `TRUSTED_PROXIES` | `RFC1918 + loopback` | Subnets allowed to send `X-Forwarded-For` or `CF-Connecting-IP` headers. |
+| `FIREWALL_BACKEND` | `auto` | Active firewall driver (`auto`, `nftables`, `firewalld`, `ufw`, `iptables`, `mock`). |
+| `FUNNEL_HELPER_TRANSPORT` | `sudo` | Privilege escalation method (`sudo`, `socket`, or `internal`). |
+| `DISTRIBUTED_FAILED_IPS_THRESHOLD` | `5` | Unique failed IPs required within 5 minutes to trip the circuit breaker. |
+| `DISTRIBUTED_LOCKOUT_DURATION_MINUTES` | `15` | Minutes to pause public logins when the circuit breaker trips. |
+| `AUDIT_LOG_RETENTION_DAYS` | `90` | Days to retain audit history (set to `0` for indefinite retention). |
+| `DATABASE_PATH` | `/data/funnel.db` (Docker) / `/var/lib/funnel/funnel.db` | SQLite database file location. |
+| `FUNNEL_UID` | `(system dynamic)` | Optional runtime UID override for the unprivileged container user. |
+| `FUNNEL_GID` | `(system dynamic)` | Optional runtime GID override for the unprivileged container group. |
+
+---
+
+## 💻 CLI Commands
+
+The single static binary `/usr/local/bin/funnel` supports the following commands:
 
 ```bash
-# Run all tests across the codebase
+# Start the web server and background maintenance worker (default)
+funnel serve
+
+# Perform a service health check (useful in Docker/Kubernetes health checks)
+funnel health
+
+# Execute privileged firewall helper action (used internally via sudo)
+funnel helper exec
+
+# Run privileged helper daemon on a Unix domain socket
+funnel helper daemon --socket /run/funnel/helper.sock
+
+# Print version information
+funnel version
+```
+
+---
+
+## 🧪 Testing
+
+Funnel includes a full unit and integration test suite that tests database mutations, rate limiting, IP resolution, template rendering, and firewall logic using the in-memory mock adapter without needing root privileges:
+
+```bash
 go test -v ./...
 ```
 
 ---
 
-## License
+## 📄 License
 
-Apache License 2.0. See [LICENSE](file:///workspace/Funnel/LICENSE) for details.
+Apache License 2.0. See [LICENSE](file:///workspace/Funnel/LICENSE) for full details.
