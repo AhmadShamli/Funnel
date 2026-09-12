@@ -118,8 +118,9 @@ func (n *NftablesAdapter) RevokeGrant(ctx context.Context, grantID int64, ip net
 	for _, p := range ports {
 		for _, r := range rules {
 			if r.IP == ip.String() && strings.EqualFold(r.Protocol, p.Protocol) && r.Port == p.Port {
-				// Delete using handle if available
-				// Or flush and let caller SyncGrants rebuild
+				if r.Handle != "" {
+					_, _ = n.detector.RunCommand(ctx, "nft", "delete", "rule", "inet", "funnel", "input", "handle", r.Handle)
+				}
 			}
 		}
 	}
@@ -188,6 +189,9 @@ func (n *NftablesAdapter) ListActiveRules(ctx context.Context) ([]ActiveRule, er
 			}
 			if tok == "comment" && i+1 < len(tokens) {
 				rule.Comment = strings.Trim(tokens[i+1], "\";")
+			}
+			if tok == "handle" && i+1 < len(tokens) {
+				rule.Handle = strings.Trim(tokens[i+1], "\";")
 			}
 		}
 

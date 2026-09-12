@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/netip"
 	"strings"
 	"time"
@@ -232,7 +233,7 @@ func (e *Engine) AuthenticateVisitor(ctx context.Context, clientIP netip.Addr, p
 	_ = e.db.IncrementAccessKeyUse(ctx, key.ID, now)
 
 	// Apply grant via firewall helper
-	_, err = e.helper.Execute(ctx, firewall.HelperRequest{
+	helperResp, err := e.helper.Execute(ctx, firewall.HelperRequest{
 		Action:          "apply_grant",
 		GrantID:         grant.ID,
 		IP:              ipStr,
@@ -240,7 +241,9 @@ func (e *Engine) AuthenticateVisitor(ctx context.Context, clientIP netip.Addr, p
 		DurationSeconds: int(duration.Seconds()),
 	})
 	if err != nil {
-		// Log error but proceed if DB grant succeeded
+		log.Printf("[FIREWALL] Error applying grant %d: %v", grant.ID, err)
+	} else if helperResp != nil && !helperResp.Success {
+		log.Printf("[FIREWALL] Helper failed applying grant %d (%s): %s", grant.ID, e.helper.Backend(), helperResp.Error)
 	}
 
 	// Record success in rate limiter
@@ -495,13 +498,15 @@ func (e *Engine) ReconcileStartup(ctx context.Context, now time.Time) (expiredCo
 		})
 	}
 
-	// 4. Atomically sync firewall
-	_, err = e.helper.Execute(ctx, firewall.HelperRequest{
+	syncResp, err := e.helper.Execute(ctx, firewall.HelperRequest{
 		Action:       "sync_grants",
 		ActiveGrants: syncList,
 	})
 	if err != nil {
 		return expiredCount, restoredGrants, fmt.Errorf("firewall sync failed: %w", err)
+	}
+	if syncResp != nil && !syncResp.Success {
+		return expiredCount, restoredGrants, fmt.Errorf("firewall sync failed: %s", syncResp.Error)
 	}
 
 	// 5. Log audit event

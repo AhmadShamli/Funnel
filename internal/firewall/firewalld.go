@@ -125,8 +125,8 @@ func (f *FirewalldAdapter) ListActiveRules(ctx context.Context) ([]ActiveRule, e
 		r.Backend = "firewalld"
 		fields := strings.Fields(line)
 		for _, field := range fields {
-			if strings.HasPrefix(field, "source address=") {
-				r.IP = strings.Trim(strings.TrimPrefix(field, "source address="), "\"")
+			if strings.HasPrefix(field, "address=") {
+				r.IP = strings.Trim(strings.TrimPrefix(field, "address="), "\"")
 			}
 			if strings.HasPrefix(field, "port=") {
 				p, _ := strconv.Atoi(strings.Trim(strings.TrimPrefix(field, "port="), "\""))

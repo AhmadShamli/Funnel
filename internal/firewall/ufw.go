@@ -52,8 +52,8 @@ func (u *UfwAdapter) ApplyGrant(ctx context.Context, grantID int64, ip netip.Add
 	defer u.mu.Unlock()
 
 	for _, p := range ports {
-		// ufw allow from <ip> to any port <port> proto <proto> comment "grant_<grantID>"
-		args := []string{"allow", "from", ip.String(), "to", "any", "port", strconv.Itoa(p.Port), "proto", strings.ToLower(p.Protocol), "comment", fmt.Sprintf("grant_%d", grantID)}
+		// ufw allow proto <proto> from <ip> to any port <port> comment "grant_<grantID>"
+		args := []string{"allow", "proto", strings.ToLower(p.Protocol), "from", ip.String(), "to", "any", "port", strconv.Itoa(p.Port), "comment", fmt.Sprintf("grant_%d", grantID)}
 		if _, err := u.detector.RunCommand(ctx, "ufw", args...); err != nil {
 			return err
 		}
@@ -66,7 +66,7 @@ func (u *UfwAdapter) RevokeGrant(ctx context.Context, grantID int64, ip netip.Ad
 	defer u.mu.Unlock()
 
 	for _, p := range ports {
-		args := []string{"delete", "allow", "from", ip.String(), "to", "any", "port", strconv.Itoa(p.Port), "proto", strings.ToLower(p.Protocol)}
+		args := []string{"delete", "allow", "proto", strings.ToLower(p.Protocol), "from", ip.String(), "to", "any", "port", strconv.Itoa(p.Port)}
 		u.detector.RunCommand(ctx, "ufw", args...)
 	}
 	return nil
@@ -76,16 +76,18 @@ func (u *UfwAdapter) SyncGrants(ctx context.Context, activeGrants []ActiveGrantR
 	u.mu.Lock()
 	defer u.mu.Unlock()
 
-	// In UFW, delete existing funnel rules and re-apply
+	// In UFW, only delete existing funnel-managed rules (with comment grant_ or funnel_)
 	rules, _ := u.ListActiveRules(ctx)
 	for _, r := range rules {
-		args := []string{"delete", "allow", "from", r.IP, "to", "any", "port", strconv.Itoa(r.Port), "proto", strings.ToLower(r.Protocol)}
-		u.detector.RunCommand(ctx, "ufw", args...)
+		if strings.HasPrefix(r.Comment, "grant_") || strings.HasPrefix(r.Comment, "funnel") {
+			args := []string{"delete", "allow", "proto", strings.ToLower(r.Protocol), "from", r.IP, "to", "any", "port", strconv.Itoa(r.Port)}
+			u.detector.RunCommand(ctx, "ufw", args...)
+		}
 	}
 
 	for _, g := range activeGrants {
 		for _, p := range g.Ports {
-			args := []string{"allow", "from", g.IP.String(), "to", "any", "port", strconv.Itoa(p.Port), "proto", strings.ToLower(p.Protocol), "comment", "funnel_active"}
+			args := []string{"allow", "proto", strings.ToLower(p.Protocol), "from", g.IP.String(), "to", "any", "port", strconv.Itoa(p.Port), "comment", "funnel_active"}
 			u.detector.RunCommand(ctx, "ufw", args...)
 		}
 	}
@@ -97,22 +99,35 @@ func (u *UfwAdapter) ListActiveRules(ctx context.Context) ([]ActiveRule, error) 
 	if err != nil {
 		return nil, err
 	}
+	return parseUfwStatusLines(string(out)), nil
+}
 
+func parseUfwStatusLines(out string) []ActiveRule {
 	var rules []ActiveRule
-	lines := strings.Split(string(out), "\n")
+	lines := strings.Split(out, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if !strings.Contains(line, "ALLOW IN") {
 			continue
 		}
-		// Parsing basic UFW numbered rule line
-		// e.g. [ 1] 22/tcp ALLOW IN 203.0.113.1 # grant_1
-		parts := strings.Fields(line)
-		if len(parts) < 5 {
+		// Strip the "[ 1]" or "[10]" prefix
+		idx := strings.Index(line, "]")
+		if idx == -1 {
 			continue
 		}
-		target := parts[1] // e.g. 22/tcp
-		fromIP := parts[4] // IP
+		rest := strings.TrimSpace(line[idx+1:])
+		parts := strings.Fields(rest)
+		// Expected format: <target> ALLOW IN <fromIP> [# <comment>]
+		if len(parts) < 4 {
+			continue
+		}
+		target := parts[0] // e.g. 22/tcp or 19132/udp
+		fromIP := parts[3] // IP or Anywhere
+
+		comment := ""
+		if hashIdx := strings.Index(rest, "#"); hashIdx != -1 {
+			comment = strings.TrimSpace(rest[hashIdx+1:])
+		}
 
 		targetParts := strings.Split(target, "/")
 		if len(targetParts) == 2 {
@@ -123,9 +138,10 @@ func (u *UfwAdapter) ListActiveRules(ctx context.Context) ([]ActiveRule, error) 
 					IP:       fromIP,
 					Protocol: targetParts[1],
 					Port:     port,
+					Comment:  comment,
 				})
 			}
 		}
 	}
-	return rules, nil
+	return rules
 }

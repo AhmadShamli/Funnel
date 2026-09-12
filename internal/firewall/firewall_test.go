@@ -140,3 +140,35 @@ func TestHelperUnixSocket(t *testing.T) {
 		t.Fatalf("socket apply_grant failed: %v, resp: %+v", err, resp)
 	}
 }
+
+func TestParseUfwStatusLines(t *testing.T) {
+	sampleOutput := `Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 22/tcp                     ALLOW IN    Anywhere                  
+[ 2] 80/tcp                     ALLOW IN    Anywhere                  
+[ 3] 19132/udp                  ALLOW IN    161.142.150.107            # grant_3
+[10] 19133/udp                  ALLOW IN    161.142.150.107            # funnel_active
+`
+
+	rules := parseUfwStatusLines(sampleOutput)
+	if len(rules) != 4 {
+		t.Fatalf("expected 4 rules, got %d: %+v", len(rules), rules)
+	}
+
+	// Verify single digit parsing
+	if rules[0].Port != 22 || rules[0].Protocol != "tcp" || rules[0].IP != "Anywhere" {
+		t.Errorf("unexpected rule 0: %+v", rules[0])
+	}
+
+	// Verify grant comment
+	if rules[2].Port != 19132 || rules[2].Protocol != "udp" || rules[2].IP != "161.142.150.107" || rules[2].Comment != "grant_3" {
+		t.Errorf("unexpected rule 2: %+v", rules[2])
+	}
+
+	// Verify double digit parsing
+	if rules[3].Port != 19133 || rules[3].Protocol != "udp" || rules[3].IP != "161.142.150.107" || rules[3].Comment != "funnel_active" {
+		t.Errorf("unexpected rule 3: %+v", rules[3])
+	}
+}

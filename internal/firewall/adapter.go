@@ -22,6 +22,7 @@ type ActiveRule struct {
 	Protocol string            `json:"protocol"`
 	Port     int               `json:"port"`
 	Comment  string            `json:"comment,omitempty"`
+	Handle   string            `json:"handle,omitempty"`
 }
 
 // FirewallAdapter abstracts Linux firewall subsystems.

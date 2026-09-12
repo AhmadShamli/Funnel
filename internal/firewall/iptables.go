@@ -93,14 +93,24 @@ func (a *IptablesAdapter) RevokeGrant(ctx context.Context, grantID int64, ip net
 	}
 
 	for _, p := range ports {
-		args := []string{
+		argsWithComment := []string{
 			"-D", "FUNNEL_INPUT",
 			"-s", ip.String(),
 			"-p", strings.ToLower(p.Protocol),
 			"--dport", strconv.Itoa(p.Port),
+			"-m", "comment", "--comment", fmt.Sprintf("grant_%d", grantID),
 			"-j", "ACCEPT",
 		}
-		a.detector.RunCommand(ctx, bin, args...)
+		if _, err := a.detector.RunCommand(ctx, bin, argsWithComment...); err != nil {
+			argsPlain := []string{
+				"-D", "FUNNEL_INPUT",
+				"-s", ip.String(),
+				"-p", strings.ToLower(p.Protocol),
+				"--dport", strconv.Itoa(p.Port),
+				"-j", "ACCEPT",
+			}
+			a.detector.RunCommand(ctx, bin, argsPlain...)
+		}
 	}
 	return nil
 }
@@ -154,7 +164,7 @@ func (a *IptablesAdapter) ListActiveRules(ctx context.Context) ([]ActiveRule, er
 			tokens := strings.Fields(line)
 			for i, tok := range tokens {
 				if tok == "-s" && i+1 < len(tokens) {
-					r.IP = tokens[i+1]
+					r.IP = strings.TrimSuffix(strings.TrimSuffix(tokens[i+1], "/32"), "/128")
 				}
 				if tok == "-p" && i+1 < len(tokens) {
 					r.Protocol = tok
