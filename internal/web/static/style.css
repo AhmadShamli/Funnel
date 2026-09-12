@@ -162,10 +162,15 @@ input:focus, select:focus, textarea:focus {
 .btn-primary {
   background: var(--primary);
   color: #fff;
-  width: 100%;
 }
 .btn-primary:hover:not(:disabled) {
   background: var(--primary-hover);
+}
+
+.btn-block,
+.auth-card form .btn,
+.auth-card .btn-primary {
+  width: 100%;
 }
 
 .btn-danger {
@@ -194,8 +199,9 @@ input:focus, select:focus, textarea:focus {
 }
 
 .btn-sm {
-  padding: 0.4rem 0.75rem;
+  padding: 0.4rem 0.85rem;
   font-size: 0.85rem;
+  width: auto;
 }
 
 /* Alerts & Banners */
@@ -445,7 +451,21 @@ input:focus, select:focus, textarea:focus {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 1.5rem;
   margin-bottom: 1.5rem;
+}
+
+.content-header .btn,
+.content-header form .btn {
+  width: auto;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.content-header form {
+  margin: 0;
+  display: inline-flex;
+  flex-shrink: 0;
 }
 
 .content-header h2 {
