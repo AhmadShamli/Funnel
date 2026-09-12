@@ -5,6 +5,11 @@ document.addEventListener('DOMContentLoaded', () => {
   initPasswordVisibilityToggles();
   initModals();
   initPortAccessibilityChecker();
+
+  const createKeyModal = document.getElementById('create-key-modal');
+  if (createKeyModal) {
+    preventModalAutofill(createKeyModal);
+  }
 });
 
 // Countdown Timer functionality
@@ -82,7 +87,10 @@ function initModals() {
       e.preventDefault();
       const modalId = btn.getAttribute('data-modal-open');
       const modal = document.getElementById(modalId);
-      if (modal) modal.style.display = 'flex';
+      if (modal) {
+        preventModalAutofill(modal);
+        modal.style.display = 'flex';
+      }
     });
   });
 
@@ -101,10 +109,30 @@ function initModals() {
   });
 }
 
+// Clear any credentials browser autofill may have pre-populated into creation modals
+function preventModalAutofill(modal) {
+  if (!modal) return;
+  const keyName = modal.querySelector('#key_name');
+  const keyPassword = modal.querySelector('#key_password');
+  if (!keyName && !keyPassword) return;
+
+  const clearUnfocused = () => {
+    if (keyName && document.activeElement !== keyName) keyName.value = '';
+    if (keyPassword && document.activeElement !== keyPassword) keyPassword.value = '';
+  };
+
+  clearUnfocused();
+  setTimeout(clearUnfocused, 50);
+  setTimeout(clearUnfocused, 200);
+}
+
 // Helper to open modal by ID
 function openModal(id) {
   const modal = document.getElementById(id);
-  if (modal) modal.style.display = 'flex';
+  if (modal) {
+    preventModalAutofill(modal);
+    modal.style.display = 'flex';
+  }
 }
 
 function closeModal(id) {

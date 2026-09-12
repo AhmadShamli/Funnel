@@ -39,5 +39,16 @@ func TestEmbeddedTemplates(t *testing.T) {
 				t.Errorf("template %s missing version 'v0.1.0'", name)
 			}
 		}
+		if name == "admin_keys" {
+			if !strings.Contains(body, `action="/admin/access-keys" method="POST" autocomplete="off"`) {
+				t.Errorf("admin_keys form missing autocomplete=\"off\"")
+			}
+			if !strings.Contains(body, `id="key_name" name="name" required placeholder="e.g. Contractors-SSH" autocomplete="off"`) {
+				t.Errorf("admin_keys key_name input missing autocomplete=\"off\"")
+			}
+			if !strings.Contains(body, `id="key_password" name="password" required placeholder="Enter visitor password" autocomplete="new-password"`) {
+				t.Errorf("admin_keys key_password input missing autocomplete=\"new-password\"")
+			}
+		}
 	}
 }
