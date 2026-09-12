@@ -19,7 +19,7 @@ Funnel provides temporary, password-authenticated network port access to a visit
 | **Host Firewall Bridging** | **`pid: host` with `nsenter`** | The container connects to an external Docker bridge network for reverse proxy access, while the firewall helper invokes `nsenter --net=/proc/1/ns/net` to manipulate the host's native `nftables` tables. |
 | **Network & Ingress** | **`expose` only + External Network from `.env`** | The container does not publish host ports directly. It exposes internal port `8000` to a pre-existing external Docker network defined by `EXTERNAL_NETWORK_NAME` in `.env`, assuming an upstream reverse proxy (Traefik, Nginx, Caddy, etc.). |
 | **Reverse Proxy & Client IP** | **Auto-trust Docker/RFC1918 + `TRUSTED_PROXIES`** | Standard private and Docker bridge subnets (`172.16.0.0/12`, `10.0.0.0/8`, `192.168.0.0/16`) are automatically trusted when `PROXY_MODE=reverse_proxy`. Explicit CIDR overrides are supported via `TRUSTED_PROXIES`. |
-| **Base OS & Build Strategy** | **Multi-Stage Go Build (Debian Slim Runtime)** | Builder stage (`golang:1.23-bookworm`) compiles a static Go binary (`CGO_ENABLED=0`). Runtime stage (`debian:bookworm-slim`) provides official `nftables`, `iptables`, `sudo`, `util-linux` (`nsenter`), and `tini`. Total image size is ~35MB. |
+| **Base OS & Build Strategy** | **Multi-Stage Go Build (Debian Slim Runtime)** | Builder stage (`golang:1.26-bookworm`) compiles a static Go binary (`CGO_ENABLED=0`). Runtime stage (`debian:bookworm-slim`) provides official `nftables`, `iptables`, `sudo`, `util-linux` (`nsenter`), and `tini`. Total image size is ~35MB. |
 | **Data Persistence** | **Single persistent `/data` volume** | All persistent data (SQLite database `/data/funnel.db` and audit records) resides in `/data`. The entrypoint handles ownership initialization (`chown -R funnel:funnel /data`). |
 | **Admin Bootstrapping** | **Strict Console Token Only** | Initial setup requires accessing the one-time random bootstrap token generated on first boot and printed to container stdout (`docker compose logs funnel`). Plaintext passwords in `.env` are prohibited. |
 | **Process & Healthcheck** | **`tini` init + Native Go `/health` check** | Uses `tini` as PID 1 to handle signal forwarding and orphan reaping. A lightweight health check probes `http://127.0.0.1:8000/health`. |
@@ -171,7 +171,7 @@ LOG_LEVEL=INFO
 
 ```dockerfile
 # Stage 1: Build static Go binary
-FROM golang:1.23-bookworm AS builder
+FROM golang:1.26-bookworm AS builder
 
 WORKDIR /build
 
