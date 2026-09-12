@@ -10,6 +10,10 @@
 </head>
 <body>
   {{template "content" .}}
+  <footer class="public-footer">
+    <a href="{{repoURL}}" target="_blank" rel="noopener noreferrer">Funnel by ExciteCreation</a>
+    <span class="footer-version">v{{appVersion}}</span>
+  </footer>
 </body>
 </html>
 {{end}}

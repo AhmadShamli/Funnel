@@ -19,11 +19,10 @@ import (
 	"github.com/AhmadShamli/Funnel/internal/ipresolver"
 	"github.com/AhmadShamli/Funnel/internal/policy"
 	"github.com/AhmadShamli/Funnel/internal/server"
+	"github.com/AhmadShamli/Funnel/internal/version"
 	"github.com/AhmadShamli/Funnel/internal/web"
 	"github.com/AhmadShamli/Funnel/internal/worker"
 )
-
-const Version = "1.0.0"
 
 func main() {
 	// Automatically ensure .env.example exists if neither .env nor .env.example exists
@@ -48,7 +47,7 @@ func main() {
 	case "health":
 		runHealth(args)
 	case "version":
-		fmt.Printf("Funnel v%s (Linux static)\n", Version)
+		fmt.Printf("%s v%s (Linux static) - %s\n", version.AppName, version.Version, version.RepositoryURL)
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\nUsage: funnel [serve|helper|health|version]\n", subcmd)
 		os.Exit(1)
@@ -56,7 +55,7 @@ func main() {
 }
 
 func runServe(args []string) {
-	log.Printf("[FUNNEL] Initializing Funnel v%s...", Version)
+	log.Printf("[FUNNEL] Initializing %s v%s... (%s)", version.AppName, version.Version, version.RepositoryURL)
 
 	cfg, err := config.Load()
 	if err != nil {

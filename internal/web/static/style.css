@@ -574,3 +574,78 @@ tr:hover td {
   gap: 0.75rem;
   align-items: center;
 }
+
+/* Footer & Branding */
+.public-footer {
+  margin: 2rem 0;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.public-footer a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.public-footer a:hover {
+  color: #38bdf8;
+  text-decoration: underline;
+}
+
+.footer-version {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  background: var(--bg-elevated);
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  font-family: monospace;
+}
+
+.brand-sub {
+  padding: 0 1.5rem 0.85rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.brand-sub a {
+  color: #38bdf8;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.brand-sub a:hover {
+  color: #7dd3fc;
+  text-decoration: underline;
+}
+
+.sidebar-footer {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border-color);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sidebar-footer a {
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.sidebar-footer a:hover {
+  color: var(--text-secondary);
+  text-decoration: underline;
+}
+

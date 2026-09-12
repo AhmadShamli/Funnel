@@ -12,8 +12,13 @@
   <div class="admin-shell">
     <aside class="admin-sidebar">
       <div class="brand">
-        <span>⚡ Funnel</span>
-        <span class="badge badge-info" style="font-size: 0.65rem;">v1.0</span>
+        <a href="{{repoURL}}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none; display: flex; align-items: center; gap: 0.5rem;">
+          <span>⚡ Funnel</span>
+        </a>
+        <span class="badge badge-info" style="font-size: 0.65rem;">v{{appVersion}}</span>
+      </div>
+      <div class="brand-sub">
+        by <a href="{{repoURL}}" target="_blank" rel="noopener noreferrer">ExciteCreation</a>
       </div>
       <ul class="admin-nav">
         <li><a href="/admin" class="{{if eq .ActiveNav "dashboard"}}active{{end}}">📊 Dashboard</a></li>
@@ -31,6 +36,10 @@
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
           <button type="submit" class="btn btn-secondary btn-sm" style="width: 100%;">Sign Out</button>
         </form>
+      </div>
+      <div class="sidebar-footer">
+        <a href="{{repoURL}}" target="_blank" rel="noopener noreferrer">Funnel by ExciteCreation</a>
+        <span class="footer-version">v{{appVersion}}</span>
       </div>
     </aside>
 

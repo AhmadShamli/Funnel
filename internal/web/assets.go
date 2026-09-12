@@ -6,6 +6,9 @@ import (
 	"html/template"
 	"io/fs"
 	"net/http"
+	"path/filepath"
+
+	"github.com/AhmadShamli/Funnel/internal/version"
 )
 
 //go:embed static/* templates/*
@@ -20,6 +23,13 @@ type TemplateManager struct {
 func NewTemplateManager() (*TemplateManager, error) {
 	tm := &TemplateManager{
 		templates: make(map[string]*template.Template),
+	}
+
+	funcMap := template.FuncMap{
+		"appVersion": func() string { return version.Version },
+		"appName":    func() string { return version.AppName },
+		"author":     func() string { return version.Author },
+		"repoURL":    func() string { return version.RepositoryURL },
 	}
 
 	pages := []struct {
@@ -42,7 +52,8 @@ func NewTemplateManager() (*TemplateManager, error) {
 	}
 
 	for _, page := range pages {
-		tmpl, err := template.ParseFS(EmbeddedFS, page.files...)
+		baseName := filepath.Base(page.files[0])
+		tmpl, err := template.New(baseName).Funcs(funcMap).ParseFS(EmbeddedFS, page.files...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse template %s: %w", page.name, err)
 		}

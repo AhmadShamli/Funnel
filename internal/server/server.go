@@ -12,6 +12,7 @@ import (
 	"github.com/AhmadShamli/Funnel/internal/firewall"
 	"github.com/AhmadShamli/Funnel/internal/ipresolver"
 	"github.com/AhmadShamli/Funnel/internal/policy"
+	"github.com/AhmadShamli/Funnel/internal/version"
 	"github.com/AhmadShamli/Funnel/internal/web"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -91,10 +92,13 @@ func (s *Server) setupRoutes() {
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"status":   "ok",
-			"database": dbStatus,
-			"backend":  s.cfg.FirewallBackend,
-			"time":     time.Now().UTC().Format(time.RFC3339),
+			"status":     "ok",
+			"app":        version.AppName,
+			"version":    version.Version,
+			"repository": version.RepositoryURL,
+			"database":   dbStatus,
+			"backend":    s.cfg.FirewallBackend,
+			"time":       time.Now().UTC().Format(time.RFC3339),
 		})
 	})
 

@@ -2,6 +2,7 @@ package web
 
 import (
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -25,6 +26,18 @@ func TestEmbeddedTemplates(t *testing.T) {
 		}
 		if rec.Code != 200 {
 			t.Errorf("template %s expected status 200, got %d", name, rec.Code)
+		}
+		body := rec.Body.String()
+		if name == "visitor_index" || name == "admin_dashboard" {
+			if !strings.Contains(body, "Funnel by ExciteCreation") {
+				t.Errorf("template %s missing 'Funnel by ExciteCreation' branding", name)
+			}
+			if !strings.Contains(body, "https://github.com/AhmadShamli/Funnel") {
+				t.Errorf("template %s missing github repository link", name)
+			}
+			if !strings.Contains(body, "v0.1.0") {
+				t.Errorf("template %s missing version 'v0.1.0'", name)
+			}
 		}
 	}
 }

@@ -1,8 +1,13 @@
-# ⚡ Funnel
+# ⚡ Funnel by ExciteCreation
+
+[![GitHub](https://img.shields.io/badge/GitHub-AhmadShamli%2FFunnel-blue?logo=github)](https://github.com/AhmadShamli/Funnel)
+[![Version](https://img.shields.io/badge/version-0.1.0-emerald)](https://github.com/AhmadShamli/Funnel)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 **On-demand, temporary firewall port access for your servers via a simple web interface.**
+Maintained by [ExciteCreation](https://github.com/AhmadShamli/Funnel).
 
-Instead of exposing management ports (SSH, databases, staging tools, internal dashboards) to the entire public internet 24/7 or wrestling with complicated VPN profiles on every visitor's device, **Funnel** gives you instant, web-authenticated access on demand.
+Instead of exposing management ports (SSH, databases, staging tools, internal dashboards) to the entire public internet 24/7 or wrestling with complicated VPN profiles on every visitor's device, **Funnel by ExciteCreation** gives you instant, web-authenticated access on demand.
 
 A user visits your Funnel URL in their browser, enters an access password, and their detected public IP address is immediately authorized on the host firewall for a set duration. When time runs out or the user disconnects, the firewall rule automatically closes.
 
