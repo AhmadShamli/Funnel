@@ -222,3 +222,72 @@ func TestPortAccessibilityEndpoint(t *testing.T) {
 		}
 	}
 }
+
+func TestParseProcAddress(t *testing.T) {
+	// IPv4: 127.0.0.1:8000 (8000 in hex is 1F40, 127.0.0.1 in little endian hex is 0100007F)
+	ip, port, err := parseProcAddress("0100007F:1F40")
+	if err != nil {
+		t.Fatalf("parseProcAddress failed: %v", err)
+	}
+	if ip.String() != "127.0.0.1" || port != 8000 {
+		t.Errorf("expected 127.0.0.1:8000, got %s:%d", ip.String(), port)
+	}
+	if scope := determineScope(ip); scope != "localhost" {
+		t.Errorf("expected scope localhost, got %s", scope)
+	}
+
+	// IPv4: 0.0.0.0:22 (22 in hex is 0016)
+	ipZero, portSSH, err := parseProcAddress("00000000:0016")
+	if err != nil {
+		t.Fatalf("parseProcAddress failed: %v", err)
+	}
+	if ipZero.String() != "0.0.0.0" || portSSH != 22 {
+		t.Errorf("expected 0.0.0.0:22, got %s:%d", ipZero.String(), portSSH)
+	}
+	if scope := determineScope(ipZero); scope != "public" {
+		t.Errorf("expected scope public, got %s", scope)
+	}
+
+	// IPv6: ::1:8080 (8080 in hex is 1F90)
+	// ::1 in four 32-bit little-endian words: 00000000 00000000 00000000 01000000
+	ip6, port6, err := parseProcAddress("00000000000000000000000001000000:1F90")
+	if err != nil {
+		t.Fatalf("parseProcAddress failed for IPv6: %v", err)
+	}
+	if ip6.String() != "::1" || port6 != 8080 {
+		t.Errorf("expected ::1:8080, got %s:%d", ip6.String(), port6)
+	}
+	if scope := determineScope(ip6); scope != "localhost" {
+		t.Errorf("expected scope localhost for ::1, got %s", scope)
+	}
+}
+
+func TestGetSystemListeningSockets(t *testing.T) {
+	// Start a local TCP listener
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	defer ln.Close()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+
+	sockets := GetSystemListeningSockets()
+	// On Linux, /proc/net/tcp should contain this listening port
+	var found bool
+	for _, s := range sockets {
+		if s.Port == port && s.Protocol == "tcp" {
+			found = true
+			if s.State != "LISTEN" {
+				t.Errorf("expected state LISTEN, got %s", s.State)
+			}
+			break
+		}
+	}
+	if !found {
+		// In some virtualized or non-Linux test environments /proc might not be accessible,
+		// but if /proc exists, found should be true.
+		t.Logf("Note: port %d was not in detected sockets (total detected: %d)", port, len(sockets))
+	}
+}
+

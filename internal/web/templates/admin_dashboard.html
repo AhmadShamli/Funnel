@@ -2,14 +2,20 @@
 {{define "admin_content"}}
 <div class="content-header">
   <h2>Operational Overview</h2>
-  <a href="/admin/grants" class="btn btn-primary btn-sm">Inspect Active Grants</a>
+  <div style="display: flex; gap: 0.5rem;">
+    <a href="/admin/open-ports" class="btn btn-secondary btn-sm">🔓 View Open Ports</a>
+    <a href="/admin/grants" class="btn btn-primary btn-sm">Inspect Active Grants</a>
+  </div>
 </div>
 
 <div class="metrics-grid">
   <div class="metric-card">
     <div class="metric-label">Active Port Grants</div>
     <div class="metric-value">{{.ActiveGrantsCount}}</div>
-    <div style="font-size: 0.8rem; color: var(--text-secondary);">Currently open on host firewall</div>
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-size: 0.8rem; color: var(--text-secondary);">Currently open on host firewall</span>
+      <a href="/admin/open-ports" style="font-size: 0.8rem; color: #38bdf8;">View &rarr;</a>
+    </div>
   </div>
 
   <div class="metric-card">

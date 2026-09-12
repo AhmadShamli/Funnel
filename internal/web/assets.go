@@ -53,6 +53,7 @@ func NewTemplateManager() (*TemplateManager, error) {
 		{"admin_keys", []string{"templates/admin_layout.html", "templates/admin_keys.html"}},
 		{"admin_port_groups", []string{"templates/admin_layout.html", "templates/admin_port_groups.html"}},
 		{"admin_networks", []string{"templates/admin_layout.html", "templates/admin_networks.html"}},
+		{"admin_open_ports", []string{"templates/admin_layout.html", "templates/admin_open_ports.html"}},
 		{"admin_grants", []string{"templates/admin_layout.html", "templates/admin_grants.html"}},
 		{"admin_firewalls", []string{"templates/admin_layout.html", "templates/admin_firewalls.html"}},
 		{"admin_audit", []string{"templates/admin_layout.html", "templates/admin_audit.html"}},

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -464,3 +465,168 @@ func TestAdminUpdateEntities(t *testing.T) {
 		t.Errorf("network fields not properly updated: %+v", updatedNet)
 	}
 }
+
+func TestAdminOpenPortsPageAndCheck(t *testing.T) {
+	srv, db, _ := setupTestServer(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	// 1. Create admin user and session
+	now := time.Now().UTC()
+	hash, err := auth.HashAdminPassword("Secret123456!", 12)
+	if err != nil {
+		t.Fatalf("failed to hash password: %v", err)
+	}
+	admin := &models.AdminUser{
+		Username:     "openportadmin",
+		PasswordHash: hash,
+		Role:         "superadmin",
+		IsActive:     true,
+		CreatedAt:    now,
+	}
+	if err := db.CreateAdminUser(ctx, admin); err != nil {
+		t.Fatalf("failed to create admin: %v", err)
+	}
+
+	sessionToken, _ := auth.GenerateRandomToken(32)
+	session := &models.AdminSession{
+		AdminUserID:      admin.ID,
+		SessionTokenHash: auth.HashToken(sessionToken),
+		UserAgent:        "Go-Test-Agent",
+		ClientIP:         "127.0.0.1",
+		CreatedAt:        now,
+		LastActivityAt:   now,
+		ExpiresAt:        now.Add(8 * time.Hour),
+	}
+	if err := db.CreateAdminSession(ctx, session); err != nil {
+		t.Fatalf("failed to create admin session: %v", err)
+	}
+	sessionCookie := &http.Cookie{Name: "funnel_admin_session", Value: sessionToken}
+
+	// 2. Create a Port Group
+	pg := &models.PortGroup{
+		Name:                 "Database Cluster",
+		AvailabilityMode:     "global",
+		AllowExtend:          true,
+		GrantDurationSeconds: 3600,
+		IsActive:             true,
+		Ports: []models.PortRule{
+			{Protocol: "tcp", Port: 5432},
+			{Protocol: "tcp", Port: 6379},
+		},
+	}
+	if err := db.CreatePortGroup(ctx, pg); err != nil {
+		t.Fatalf("failed to create port group: %v", err)
+	}
+
+	// 3. Create Access Key and an active Access Grant
+	key := &models.AccessKey{
+		Name:         "Dev DB Team",
+		PasswordHash: auth.HashAccessKey("test-secret-pepper", "dbpass123"),
+		IsActive:     true,
+		PortGroupIDs: []int64{pg.ID},
+	}
+	if err := db.CreateAccessKey(ctx, key); err != nil {
+		t.Fatalf("failed to create access key: %v", err)
+	}
+
+	grantToken, _ := auth.GenerateRandomToken(32)
+	grant := &models.AccessGrant{
+		AccessKeyID:      &key.ID,
+		GrantSource:      "password",
+		SourceIP:         "203.0.113.50",
+		Status:           "active",
+		VisitorTokenHash: auth.HashToken(grantToken),
+		GrantedAt:        now,
+		ExpiresAt:        now.Add(1 * time.Hour),
+		Ports: []models.PortRule{
+			{Protocol: "tcp", Port: 5432},
+		},
+		AccessKeyName: "Dev DB Team",
+	}
+	if err := db.CreateAccessGrant(ctx, grant); err != nil {
+		t.Fatalf("failed to create access grant: %v", err)
+	}
+
+	handler := srv.Handler()
+
+	// 4. Test GET /admin/open-ports
+	reqPage := httptest.NewRequest("GET", "/admin/open-ports", nil)
+	reqPage.AddCookie(sessionCookie)
+	recPage := httptest.NewRecorder()
+	handler.ServeHTTP(recPage, reqPage)
+
+	if recPage.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /admin/open-ports, got %d: %s", recPage.Code, recPage.Body.String())
+	}
+	body := recPage.Body.String()
+	if !strings.Contains(body, "Current Open Ports") {
+		t.Errorf("expected page title 'Current Open Ports'")
+	}
+	if !strings.Contains(body, "5432/tcp") {
+		t.Errorf("expected 5432/tcp to be displayed in open ports page")
+	}
+	if !strings.Contains(body, "203.0.113.50") {
+		t.Errorf("expected client IP 203.0.113.50 to be displayed")
+	}
+	if !strings.Contains(body, "Database Cluster") {
+		t.Errorf("expected port group name 'Database Cluster' to be displayed")
+	}
+	if !strings.Contains(body, "Dev DB Team") {
+		t.Errorf("expected key name 'Dev DB Team' to be displayed")
+	}
+
+	// 5. Test GET /admin/open-ports/check (JSON reachability probe)
+	reqCheck := httptest.NewRequest("GET", "/admin/open-ports/check?ports=5432/tcp", nil)
+	reqCheck.AddCookie(sessionCookie)
+	recCheck := httptest.NewRecorder()
+	handler.ServeHTTP(recCheck, reqCheck)
+
+	if recCheck.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /admin/open-ports/check, got %d: %s", recCheck.Code, recCheck.Body.String())
+	}
+	if ct := recCheck.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Errorf("expected application/json, got %s", ct)
+	}
+
+	var checkResp struct {
+		Status string            `json:"status"`
+		Ports  []PortCheckStatus `json:"ports"`
+	}
+	if err := json.Unmarshal(recCheck.Body.Bytes(), &checkResp); err != nil {
+		t.Fatalf("failed to parse json response: %v", err)
+	}
+	if checkResp.Status != "ok" {
+		t.Errorf("expected status 'ok', got %s", checkResp.Status)
+	}
+	if len(checkResp.Ports) != 1 || checkResp.Ports[0].Port != 5432 {
+		t.Errorf("expected 1 port result for 5432, got %+v", checkResp.Ports)
+	}
+
+	// 6. Test Revoke from Open Ports page
+	csrfCookie := &http.Cookie{Name: "funnel_csrf", Value: "test-csrf-token"}
+	revokeForm := url.Values{"csrf_token": {"test-csrf-token"}}
+	reqRevoke := httptest.NewRequest("POST", fmt.Sprintf("/admin/grants/%d/revoke?from=open-ports", grant.ID), strings.NewReader(revokeForm.Encode()))
+	reqRevoke.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	reqRevoke.AddCookie(sessionCookie)
+	reqRevoke.AddCookie(csrfCookie)
+	recRevoke := httptest.NewRecorder()
+	handler.ServeHTTP(recRevoke, reqRevoke)
+
+	if recRevoke.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 redirect on grant revoke, got %d", recRevoke.Code)
+	}
+	if loc := recRevoke.Header().Get("Location"); loc != "/admin/open-ports?success=Grant+revoked" {
+		t.Errorf("expected redirect to /admin/open-ports?success=Grant+revoked, got %s", loc)
+	}
+
+	// Verify grant is now revoked
+	revokedGrant, err := db.GetAccessGrantByID(ctx, grant.ID)
+	if err != nil {
+		t.Fatalf("failed to get grant: %v", err)
+	}
+	if revokedGrant.Status != "revoked" {
+		t.Errorf("expected status revoked, got %s", revokedGrant.Status)
+	}
+}
+

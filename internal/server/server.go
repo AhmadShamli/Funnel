@@ -151,6 +151,10 @@ func (s *Server) setupRoutes() {
 		admin.Post("/allowed-networks/{id}/update", adminH.HandleAllowedNetworksUpdate)
 		admin.Post("/allowed-networks/{id}/delete", adminH.HandleAllowedNetworksDelete)
 
+		// Open Ports
+		admin.Get("/open-ports", adminH.HandleOpenPortsGet)
+		admin.Get("/open-ports/check", adminH.HandleOpenPortsCheck)
+
 		// Grants
 		admin.Get("/grants", adminH.HandleGrantsGet)
 		admin.Post("/grants/{id}/revoke", adminH.HandleGrantsRevoke)

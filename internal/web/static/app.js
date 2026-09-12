@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initPasswordVisibilityToggles();
   initModals();
   initPortAccessibilityChecker();
+  initAdminOpenPorts();
 
   const createKeyModal = document.getElementById('create-key-modal');
   if (createKeyModal) {
@@ -264,4 +265,140 @@ function initPortAccessibilityChecker() {
     if (intervalId) clearInterval(intervalId);
   });
 }
+
+// Admin Open Ports page reachability testing and real-time filtering
+function initAdminOpenPorts() {
+  const probeBtn = document.getElementById('probe-all-ports-btn');
+  const searchInput = document.getElementById('open-ports-search-input');
+  const filterPills = document.querySelectorAll('[data-section-filter]');
+  const metaEl = document.getElementById('probe-status-meta');
+
+  if (!probeBtn && !searchInput && filterPills.length === 0) return;
+
+  // 1. Search filter functionality
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      const q = searchInput.value.toLowerCase().trim();
+      const rows = document.querySelectorAll('.filterable-table .port-row-item');
+      rows.forEach(row => {
+        const text = (row.getAttribute('data-search') || row.textContent).toLowerCase();
+        if (!q || text.includes(q)) {
+          row.style.display = '';
+        } else {
+          row.style.display = 'none';
+        }
+      });
+    });
+  }
+
+  // 2. Section pill filters
+  filterPills.forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      filterPills.forEach(b => {
+        b.classList.remove('active-filter', 'btn-primary');
+        b.classList.add('btn-secondary');
+      });
+      btn.classList.add('active-filter', 'btn-primary');
+      btn.classList.remove('btn-secondary');
+
+      const filter = btn.getAttribute('data-section-filter');
+      const fwSection = document.getElementById('section-firewall-ports');
+      const socketsSection = document.getElementById('section-listening-sockets');
+
+      if (filter === 'firewall') {
+        if (fwSection) fwSection.style.display = 'block';
+        if (socketsSection) socketsSection.style.display = 'none';
+      } else if (filter === 'sockets') {
+        if (fwSection) fwSection.style.display = 'none';
+        if (socketsSection) socketsSection.style.display = 'block';
+      } else {
+        if (fwSection) fwSection.style.display = 'block';
+        if (socketsSection) socketsSection.style.display = 'block';
+      }
+    });
+  });
+
+  // 3. Reachability probe execution
+  let isProbing = false;
+
+  async function runProbe() {
+    if (isProbing) return;
+    isProbing = true;
+
+    if (probeBtn) {
+      probeBtn.setAttribute('disabled', 'disabled');
+      probeBtn.textContent = '⏳ Probing Ports...';
+    }
+    if (metaEl) metaEl.textContent = 'Testing port reachability...';
+
+    // Mark badges as probing
+    const badges = document.querySelectorAll('.port-status-badge[data-probe-port]');
+    badges.forEach(b => {
+      b.className = 'port-status-badge status-checking';
+      const text = b.querySelector('.status-indicator-text');
+      if (text) text.textContent = 'Probing...';
+    });
+
+    try {
+      const res = await fetch('/admin/open-ports/check', {
+        headers: { 'Accept': 'application/json' },
+        credentials: 'same-origin'
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      if (data && Array.isArray(data.ports)) {
+        data.ports.forEach(p => {
+          const protoLower = (p.protocol || 'tcp').toLowerCase();
+          badges.forEach(badge => {
+            const bPort = badge.getAttribute('data-probe-port');
+            const bProto = (badge.getAttribute('data-probe-protocol') || 'tcp').toLowerCase();
+            if (bPort === String(p.port) && bProto === protoLower) {
+              badge.className = 'port-status-badge';
+              const textEl = badge.querySelector('.status-indicator-text');
+              if (p.open) {
+                badge.classList.add('status-open');
+                const lat = p.latency_ms > 0 ? ` (${p.latency_ms}ms)` : '';
+                badge.setAttribute('title', (p.message || `Port ${p.port}/${p.protocol} is open and reachable`) + lat);
+                if (textEl) textEl.textContent = `Open${lat}`;
+              } else if (p.status === 'unreachable') {
+                badge.classList.add('status-unreachable');
+                badge.setAttribute('title', p.message || `Port ${p.port}/${p.protocol} timed out`);
+                if (textEl) textEl.textContent = 'Unreachable';
+              } else {
+                badge.classList.add('status-closed');
+                badge.setAttribute('title', p.message || `Port ${p.port}/${p.protocol} closed`);
+                if (textEl) textEl.textContent = 'Closed';
+              }
+            }
+          });
+        });
+
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        if (metaEl) metaEl.textContent = `Probed ${data.ports.length} ports at ${timeStr}`;
+      }
+    } catch (err) {
+      if (metaEl) metaEl.textContent = 'Probe request failed';
+    } finally {
+      isProbing = false;
+      if (probeBtn) {
+        probeBtn.removeAttribute('disabled');
+        probeBtn.textContent = '▶ Probe Port Reachability';
+      }
+    }
+  }
+
+  if (probeBtn) {
+    probeBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      runProbe();
+    });
+  }
+}
+
 

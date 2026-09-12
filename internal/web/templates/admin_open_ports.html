@@ -1,0 +1,301 @@
+{{define "admin_title"}}Current Open Ports{{end}}
+{{define "admin_content"}}
+<div class="content-header">
+  <div>
+    <h2>Current Open Ports & Network Sockets</h2>
+    <p style="color: var(--text-secondary); font-size: 0.9rem;">
+      Real-time visibility into firewall port authorizations, active client leases, and host listening services
+    </p>
+  </div>
+  <div style="display: flex; gap: 0.5rem; align-items: center;">
+    <button type="button" id="probe-all-ports-btn" class="btn btn-primary btn-sm">
+      ▶ Probe Port Reachability
+    </button>
+    <a href="/admin/open-ports" class="btn btn-secondary btn-sm">
+      ↻ Refresh
+    </a>
+  </div>
+</div>
+
+<div class="metrics-grid">
+  <div class="metric-card">
+    <div class="metric-label">Firewall Open Ports</div>
+    <div class="metric-value">{{.TotalOpenPortsCount}}</div>
+    <div style="font-size: 0.8rem; color: var(--text-secondary);">Currently granted through host firewall</div>
+  </div>
+
+  <div class="metric-card">
+    <div class="metric-label">Active Client Leases</div>
+    <div class="metric-value">{{.ActiveGrantsCount}}</div>
+    <div style="font-size: 0.8rem; color: var(--text-secondary);">Sessions holding open ports</div>
+  </div>
+
+  <div class="metric-card">
+    <div class="metric-label">Host Listening Sockets</div>
+    <div class="metric-value">{{.ListeningSocketsCount}}</div>
+    <div style="font-size: 0.8rem; color: var(--text-secondary);">Local TCP/UDP services detected</div>
+  </div>
+
+  <div class="metric-card">
+    <div class="metric-label">Configured Port Groups</div>
+    <div class="metric-value">{{.ConfiguredPortGroupsCount}}</div>
+    <div style="font-size: 0.8rem; color: var(--text-secondary);"><a href="/admin/port-groups" style="color: #38bdf8;">Manage Port Groups &rarr;</a></div>
+  </div>
+</div>
+
+<!-- Search and Filter Bar -->
+<div style="display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; background: var(--bg-surface); padding: 0.75rem 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+  <div style="flex: 1; min-width: 250px;">
+    <input type="text" id="open-ports-search-input" placeholder="🔍 Filter by port, protocol, IP, or service name..." style="padding: 0.5rem 0.85rem; font-size: 0.9rem;">
+  </div>
+  <div style="display: flex; gap: 0.5rem; align-items: center;">
+    <span id="probe-status-meta" style="font-size: 0.8rem; color: var(--text-secondary);"></span>
+    <div class="filter-pills" style="display: flex; gap: 0.35rem;">
+      <button type="button" class="btn btn-secondary btn-sm active-filter" data-section-filter="all">All Sections</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-section-filter="firewall">Firewall Ports ({{.TotalOpenPortsCount}})</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-section-filter="sockets">Listening Sockets ({{.ListeningSocketsCount}})</button>
+    </div>
+  </div>
+</div>
+
+<!-- Section 1: Active Firewall Open Ports -->
+<div class="open-ports-section" id="section-firewall-ports" style="margin-bottom: 2.5rem;">
+  <div class="content-header" style="margin-bottom: 0.75rem;">
+    <div>
+      <h3>🛡️ Active Firewall Open Ports (Temporary Access Grants)</h3>
+      <p style="color: var(--text-secondary); font-size: 0.85rem;">
+        Ports currently permitted through Linux kernel firewall (<code>{{.ActiveBackend}}</code>) by active visitor grants
+      </p>
+    </div>
+  </div>
+
+  <div class="table-container">
+    <table class="filterable-table" id="firewall-open-ports-table">
+      <thead>
+        <tr>
+          <th style="width: 130px;">Port / Protocol</th>
+          <th style="width: 160px;">Port Group</th>
+          <th>Authorized Client IPs & Active Leases</th>
+          <th style="width: 140px;">Kernel Firewall</th>
+          <th style="width: 160px;">Reachability</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .OpenPorts}}
+        <tr class="port-row-item" data-search="{{.Port}} {{.Protocol}} {{.PortGroupName}} {{range .ClientIPs}}{{.}} {{end}}{{range .Grants}}{{.SourceLabel}} {{end}}">
+          <td>
+            <div style="display: flex; align-items: center; gap: 0.4rem;">
+              <span class="port-badge" style="font-size: 0.95rem; font-weight: 700;">{{.Port}}/{{.Protocol}}</span>
+            </div>
+          </td>
+          <td>
+            {{if .PortGroupName}}
+              <strong style="color: #f1f5f9;">{{.PortGroupName}}</strong>
+            {{else}}
+              <span style="color: var(--text-muted); font-size: 0.85rem;">Direct Grant</span>
+            {{end}}
+          </td>
+          <td>
+            <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+              <div style="display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center;">
+                <span class="badge badge-info" style="font-size: 0.75rem;">{{.ActiveGrantsCount}} Active {{if eq .ActiveGrantsCount 1}}Session{{else}}Sessions{{end}}</span>
+                {{range .ClientIPs}}
+                <code style="background: var(--bg-elevated); padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.8rem; color: #38bdf8;">{{.}}</code>
+                {{end}}
+              </div>
+
+              <!-- Detailed active grant sessions breakdown -->
+              <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(71, 85, 105, 0.4); border-radius: var(--radius-sm); padding: 0.5rem; display: flex; flex-direction: column; gap: 0.35rem;">
+                {{range .Grants}}
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem; gap: 0.5rem;">
+                  <div style="display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;">
+                    <code>{{.SourceIP}}</code>
+                    <span style="color: var(--text-secondary);">via</span>
+                    <span class="badge {{if eq .GrantSource "password"}}badge-info{{else}}badge-success{{end}}" style="font-size: 0.7rem;">
+                      {{if eq .GrantSource "password"}}🔑{{else}}🌐{{end}} {{.SourceLabel}}
+                    </span>
+                    <span style="color: var(--text-muted); font-size: 0.75rem;">(Grant #{{.GrantID}})</span>
+                  </div>
+
+                  <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <span style="color: #fbbf24; font-family: monospace; font-size: 0.8rem;" data-countdown-seconds="{{.RemainingSeconds}}" data-format-minutes="true">
+                      {{.RemainingSeconds}}s
+                    </span>
+                    <form action="/admin/grants/{{.GrantID}}/revoke?from=open-ports" method="POST" style="margin: 0;" onsubmit="return confirm('Immediately revoke grant #{{.GrantID}} for {{.SourceIP}}?');">
+                      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                      <button type="submit" class="btn btn-danger btn-sm" style="padding: 0.15rem 0.45rem; font-size: 0.75rem;">Revoke</button>
+                    </form>
+                  </div>
+                </div>
+                {{end}}
+              </div>
+            </div>
+          </td>
+          <td>
+            {{if .KernelRuleActive}}
+            <span class="badge badge-success" title="Rule active in firewall table">✓ Active</span>
+            {{else}}
+            <span class="badge badge-info" title="Rule managed by firewall engine">✓ Enforced</span>
+            {{end}}
+          </td>
+          <td>
+            <div class="port-status-badge {{if .Listening}}status-open{{else}}status-checking{{end}}"
+                 data-probe-port="{{.Port}}"
+                 data-probe-protocol="{{.Protocol}}"
+                 title="{{if .Listening}}Service listening on host{{else}}Awaiting reachability probe{{end}}">
+              <span class="status-indicator-dot"></span>
+              <span class="status-indicator-text">{{if .Listening}}Listening{{else}}Untested{{end}}</span>
+            </div>
+          </td>
+        </tr>
+        {{else}}
+        <tr>
+          <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2.5rem;">
+            <div>🔓 No active firewall ports currently open.</div>
+            <div style="font-size: 0.85rem; margin-top: 0.4rem; color: var(--text-secondary);">
+              When users authenticate or always-allowed networks connect, their authorized ports appear here.
+            </div>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Section 2: Host System Listening Sockets -->
+<div class="open-ports-section" id="section-listening-sockets" style="margin-bottom: 2.5rem;">
+  <div class="content-header" style="margin-bottom: 0.75rem;">
+    <div>
+      <h3>🔌 Host System Listening Services & Sockets</h3>
+      <p style="color: var(--text-secondary); font-size: 0.85rem;">
+        TCP and UDP services currently bound and listening on the server host interfaces
+      </p>
+    </div>
+  </div>
+
+  <div class="table-container">
+    <table class="filterable-table" id="listening-sockets-table">
+      <thead>
+        <tr>
+          <th style="width: 130px;">Port / Protocol</th>
+          <th style="width: 170px;">Bind Address</th>
+          <th style="width: 150px;">Exposure Scope</th>
+          <th>Funnel Status</th>
+          <th>Matched Port Group</th>
+          <th style="width: 160px;">Reachability</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .ListeningSockets}}
+        <tr class="port-row-item" data-search="{{.Port}} {{.Protocol}} {{.IP}} {{.Scope}} {{.FunnelStatus}} {{range .MatchedPortGroups}}{{.}} {{end}}">
+          <td>
+            <span class="port-badge" style="font-size: 0.95rem; font-weight: 700;">{{.Port}}/{{.Protocol}}</span>
+          </td>
+          <td>
+            <code>{{.IP}}</code>
+          </td>
+          <td>
+            {{if eq .Scope "public"}}
+              <span class="badge badge-warning" title="Listening on 0.0.0.0 or ::">Public Ingress</span>
+            {{else if eq .Scope "localhost"}}
+              <span class="badge badge-secondary" title="Bound strictly to loopback">Localhost Only</span>
+            {{else}}
+              <span class="badge badge-info" title="Bound to private IP">Private Network</span>
+            {{end}}
+          </td>
+          <td>
+            {{if eq .FunnelStatus "active_grant"}}
+              <span class="badge badge-success">🛡️ Active Grant Open ({{.ActiveGrantsCount}} IPs)</span>
+            {{else if eq .FunnelStatus "configured"}}
+              <span class="badge badge-info">🔒 Port Group Defined (Idle)</span>
+            {{else if eq .FunnelStatus "localhost"}}
+              <span class="badge badge-secondary">🏠 Local Service</span>
+            {{else}}
+              <span class="badge badge-warning">⚠️ Exposed Host Service</span>
+            {{end}}
+          </td>
+          <td>
+            {{range .MatchedPortGroups}}
+              <span class="badge badge-info" style="margin-right: 0.25rem;">{{.}}</span>
+            {{else}}
+              <span style="color: var(--text-muted); font-size: 0.8rem;">—</span>
+            {{end}}
+          </td>
+          <td>
+            <div class="port-status-badge status-checking"
+                 data-probe-port="{{.Port}}"
+                 data-probe-protocol="{{.Protocol}}"
+                 title="Awaiting reachability probe">
+              <span class="status-indicator-dot"></span>
+              <span class="status-indicator-text">Untested</span>
+            </div>
+          </td>
+        </tr>
+        {{else}}
+        <tr>
+          <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2.5rem;">
+            No listening sockets detected from host system tables.
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Section 3: Port Groups Reference -->
+<div class="open-ports-section" id="section-configured-groups">
+  <div class="content-header" style="margin-bottom: 0.75rem;">
+    <div>
+      <h3>📁 Configured Port Groups Overview</h3>
+      <p style="color: var(--text-secondary); font-size: 0.85rem;">
+        Reusable port rules defined in Funnel available for visitor access keys and network CIDRs
+      </p>
+    </div>
+    <a href="/admin/port-groups" class="btn btn-secondary btn-sm">+ Manage Port Groups</a>
+  </div>
+
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>Group Name</th>
+          <th>Availability</th>
+          <th>Configured Ports</th>
+          <th>Default Duration</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .PortGroups}}
+        <tr>
+          <td><strong style="color: #f1f5f9;">{{.Name}}</strong></td>
+          <td><code>{{.AvailabilityMode}}</code></td>
+          <td>
+            <div style="display: flex; flex-wrap: wrap; gap: 0.35rem;">
+              {{range .Ports}}
+              <span class="port-badge" style="font-size: 0.8rem;">{{.Port}}/{{.Protocol}}</span>
+              {{end}}
+            </div>
+          </td>
+          <td style="font-size: 0.85rem; color: var(--text-secondary);">{{.GrantDurationSeconds}}s</td>
+          <td>
+            {{if .IsActive}}
+            <span class="badge badge-success">Active</span>
+            {{else}}
+            <span class="badge badge-secondary">Disabled</span>
+            {{end}}
+          </td>
+        </tr>
+        {{else}}
+        <tr>
+          <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No port groups configured.</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}
+{{template "admin_layout" .}}

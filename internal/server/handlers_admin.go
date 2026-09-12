@@ -1,9 +1,12 @@
 package server
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/netip"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -675,6 +678,234 @@ func (h *AdminHandlers) HandleAllowedNetworksUpdate(w http.ResponseWriter, r *ht
 	http.Redirect(w, r, "/admin/allowed-networks?success=Network+rule+updated", http.StatusSeeOther)
 }
 
+// --- Open Ports ---
+
+func (h *AdminHandlers) HandleOpenPortsGet(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	now := time.Now().UTC()
+
+	// 1. Fetch all active grants
+	grants, err := h.db.ListActiveGrantsAll(ctx, now)
+	if err != nil {
+		grants = []models.AccessGrant{}
+	}
+
+	// 2. Fetch all configured port groups
+	portGroups, err := h.db.ListPortGroups(ctx)
+	if err != nil {
+		portGroups = []models.PortGroup{}
+	}
+
+	pgNameMap := make(map[string]string)
+	pgFullMap := make(map[string][]string)
+	for _, pg := range portGroups {
+		for _, p := range pg.Ports {
+			key := fmt.Sprintf("%d/%s", p.Port, strings.ToLower(p.Protocol))
+			if _, exists := pgNameMap[key]; !exists {
+				pgNameMap[key] = pg.Name
+			}
+			pgFullMap[key] = append(pgFullMap[key], pg.Name)
+		}
+	}
+
+	// 3. Fetch active firewall rules from kernel/backend
+	rulesResp, _ := h.helper.Execute(ctx, firewall.HelperRequest{Action: "list_rules"})
+	kernelRulesMap := make(map[string]bool)
+	if rulesResp != nil {
+		for _, rule := range rulesResp.Rules {
+			key := fmt.Sprintf("%d/%s", rule.Port, strings.ToLower(rule.Protocol))
+			kernelRulesMap[key] = true
+		}
+	}
+
+	// 4. Fetch system listening sockets
+	rawSockets := GetSystemListeningSockets()
+	listeningPortsMap := make(map[string]bool)
+	for _, s := range rawSockets {
+		key := fmt.Sprintf("%d/%s", s.Port, s.Protocol)
+		listeningPortsMap[key] = true
+	}
+
+	// 5. Aggregate active open firewall ports
+	openPortsMap := make(map[string]*OpenPortSummary)
+	for _, g := range grants {
+		label := g.GrantSource
+		if g.AccessKeyName != "" {
+			label = g.AccessKeyName
+		} else if g.AllowedNetworkName != "" {
+			label = g.AllowedNetworkName
+		}
+
+		remSec := int(g.ExpiresAt.Sub(now).Seconds())
+		if remSec < 0 {
+			remSec = 0
+		}
+
+		for _, p := range g.Ports {
+			proto := strings.ToLower(p.Protocol)
+			if proto == "" {
+				proto = "tcp"
+			}
+			ruleKey := fmt.Sprintf("%d/%s", p.Port, proto)
+
+			summary, exists := openPortsMap[ruleKey]
+			if !exists {
+				summary = &OpenPortSummary{
+					Port:             p.Port,
+					Protocol:         proto,
+					RuleKey:          ruleKey,
+					PortGroupName:    pgNameMap[ruleKey],
+					KernelRuleActive: kernelRulesMap[ruleKey],
+					Listening:        listeningPortsMap[ruleKey],
+				}
+				openPortsMap[ruleKey] = summary
+			}
+
+			summary.ActiveGrantsCount++
+			summary.ClientIPs = append(summary.ClientIPs, g.SourceIP)
+			summary.Grants = append(summary.Grants, OpenPortGrantRef{
+				GrantID:          g.ID,
+				SourceIP:         g.SourceIP,
+				GrantSource:      g.GrantSource,
+				SourceLabel:      label,
+				GrantedAt:        g.GrantedAt,
+				ExpiresAt:        g.ExpiresAt,
+				RemainingSeconds: remSec,
+			})
+		}
+	}
+
+	// Deduplicate client IPs and create sorted open ports slice
+	var openPortsList []OpenPortSummary
+	for _, summary := range openPortsMap {
+		seenIPs := make(map[string]bool)
+		var uniqueIPs []string
+		for _, ip := range summary.ClientIPs {
+			if !seenIPs[ip] {
+				seenIPs[ip] = true
+				uniqueIPs = append(uniqueIPs, ip)
+			}
+		}
+		summary.ClientIPs = uniqueIPs
+		openPortsList = append(openPortsList, *summary)
+	}
+
+	sort.Slice(openPortsList, func(i, j int) bool {
+		if openPortsList[i].Port != openPortsList[j].Port {
+			return openPortsList[i].Port < openPortsList[j].Port
+		}
+		return openPortsList[i].Protocol < openPortsList[j].Protocol
+	})
+
+	// Enrich system listening sockets with Funnel context
+	var systemSockets []SystemListeningSocket
+	for _, s := range rawSockets {
+		ruleKey := fmt.Sprintf("%d/%s", s.Port, s.Protocol)
+		s.MatchedPortGroups = pgFullMap[ruleKey]
+
+		if summary, hasGrant := openPortsMap[ruleKey]; hasGrant {
+			s.FunnelStatus = "active_grant"
+			s.ActiveGrantsCount = summary.ActiveGrantsCount
+		} else if len(s.MatchedPortGroups) > 0 {
+			s.FunnelStatus = "configured"
+		} else if s.Scope == "localhost" {
+			s.FunnelStatus = "localhost"
+		} else {
+			s.FunnelStatus = "exposed"
+		}
+		systemSockets = append(systemSockets, s)
+	}
+
+	data := h.baseData(r, "open_ports")
+	data["OpenPorts"] = openPortsList
+	data["ListeningSockets"] = systemSockets
+	data["PortGroups"] = portGroups
+	data["TotalOpenPortsCount"] = len(openPortsList)
+	data["ActiveGrantsCount"] = len(grants)
+	data["ListeningSocketsCount"] = len(systemSockets)
+	data["ConfiguredPortGroupsCount"] = len(portGroups)
+	data["ActiveBackend"] = h.helper.Backend()
+
+	_ = h.tm.Render(w, "admin_open_ports", data)
+}
+
+func (h *AdminHandlers) HandleOpenPortsCheck(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	var portsToCheck []models.PortRule
+	seen := make(map[string]bool)
+
+	addPort := func(port int, proto string) {
+		proto = strings.ToLower(strings.TrimSpace(proto))
+		if proto == "" {
+			proto = "tcp"
+		}
+		key := fmt.Sprintf("%d/%s", port, proto)
+		if seen[key] || port <= 0 || port > 65535 {
+			return
+		}
+		seen[key] = true
+		portsToCheck = append(portsToCheck, models.PortRule{Port: port, Protocol: proto})
+	}
+
+	// 1. Check if specific ports requested in query param
+	portsParam := strings.TrimSpace(r.URL.Query().Get("ports"))
+	if portsParam != "" {
+		for _, part := range strings.Split(portsParam, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			var portNum int
+			var proto string = "tcp"
+			if strings.Contains(part, "/") {
+				sub := strings.SplitN(part, "/", 2)
+				p, err := strconv.Atoi(sub[0])
+				if err == nil {
+					portNum = p
+					proto = sub[1]
+				}
+			} else {
+				p, err := strconv.Atoi(part)
+				if err == nil {
+					portNum = p
+				}
+			}
+			if portNum > 0 {
+				addPort(portNum, proto)
+			}
+		}
+	}
+
+	// 2. If no ports specified, check all open firewall ports and listening sockets
+	if len(portsToCheck) == 0 {
+		now := time.Now().UTC()
+		grants, _ := h.db.ListActiveGrantsAll(ctx, now)
+		for _, g := range grants {
+			for _, p := range g.Ports {
+				addPort(p.Port, p.Protocol)
+			}
+		}
+
+		listening := GetSystemListeningSockets()
+		for _, s := range listening {
+			addPort(s.Port, s.Protocol)
+		}
+	}
+
+	candidates := GetProbeCandidates(r.Host, h.cfg)
+	results := CheckPortsConcurrently(ctx, portsToCheck, candidates, 500*time.Millisecond)
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":     "ok",
+		"checked_at": time.Now().UTC().Format(time.RFC3339),
+		"count":      len(results),
+		"ports":      results,
+	})
+}
+
 // --- Active Grants ---
 
 func (h *AdminHandlers) HandleGrantsGet(w http.ResponseWriter, r *http.Request) {
@@ -690,7 +921,11 @@ func (h *AdminHandlers) HandleGrantsRevoke(w http.ResponseWriter, r *http.Reques
 	now := time.Now().UTC()
 
 	_ = h.engine.RevokeGrant(r.Context(), id, netip.Addr{}, now)
-	http.Redirect(w, r, "/admin/grants?success=Grant+revoked", http.StatusSeeOther)
+	target := "/admin/grants?success=Grant+revoked"
+	if r.URL.Query().Get("from") == "open-ports" || strings.Contains(r.Header.Get("Referer"), "open-ports") {
+		target = "/admin/open-ports?success=Grant+revoked"
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 // --- Firewalls ---
