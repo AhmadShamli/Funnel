@@ -1,0 +1,80 @@
+{{define "admin_layout"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{template "admin_title" .}} - Funnel Admin</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <div class="admin-shell">
+    <aside class="admin-sidebar">
+      <div class="brand">
+        <span>⚡ Funnel</span>
+        <span class="badge badge-info" style="font-size: 0.65rem;">v1.0</span>
+      </div>
+      <ul class="admin-nav">
+        <li><a href="/admin" class="{{if eq .ActiveNav "dashboard"}}active{{end}}">📊 Dashboard</a></li>
+        <li><a href="/admin/access-keys" class="{{if eq .ActiveNav "keys"}}active{{end}}">🔑 Access Keys</a></li>
+        <li><a href="/admin/port-groups" class="{{if eq .ActiveNav "port_groups"}}active{{end}}">🔌 Port Groups</a></li>
+        <li><a href="/admin/allowed-networks" class="{{if eq .ActiveNav "networks"}}active{{end}}">🌐 Allowed Networks</a></li>
+        <li><a href="/admin/grants" class="{{if eq .ActiveNav "grants"}}active{{end}}">🛡️ Active Grants</a></li>
+        <li><a href="/admin/firewalls" class="{{if eq .ActiveNav "firewalls"}}active{{end}}">🧱 Firewall Engine</a></li>
+        <li><a href="/admin/audit" class="{{if eq .ActiveNav "audit"}}active{{end}}">📜 Audit Logs</a></li>
+        <li><a href="/admin/settings" class="{{if eq .ActiveNav "settings"}}active{{end}}">⚙️ Settings & Ingress</a></li>
+        <li><a href="/admin/users" class="{{if eq .ActiveNav "users"}}active{{end}}">👥 Admin Users</a></li>
+      </ul>
+      <div style="padding: 1rem; border-top: 1px solid var(--border-color);">
+        <form action="/admin/logout" method="POST">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <button type="submit" class="btn btn-secondary btn-sm" style="width: 100%;">Sign Out</button>
+        </form>
+      </div>
+    </aside>
+
+    <main class="admin-main">
+      <header class="admin-topbar">
+        <div style="font-size: 0.9rem; color: var(--text-secondary);">
+          Admin: <strong style="color: #fff;">{{.AdminUser.Username}}</strong>
+        </div>
+        <div>
+          <a href="/" target="_blank" class="btn btn-secondary btn-sm">Public Portal ↗</a>
+        </div>
+      </header>
+
+      {{if .CircuitBreakerActive}}
+      <div style="background: #7f1d1d; border-bottom: 2px solid #ef4444; padding: 0.75rem 2rem; color: #fecaca; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <strong>⚠️ Distributed Circuit Breaker Active:</strong>
+          Public password logins are temporarily paused due to distributed brute-force detection across multiple IPs.
+        </div>
+        <form action="/admin/circuit-breaker/reset" method="POST" style="margin: 0;">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <button type="submit" class="btn btn-danger btn-sm" style="background: #b91c1c; border: 1px solid #f87171;">
+            Reset Circuit Breaker Now
+          </button>
+        </form>
+      </div>
+      {{end}}
+
+      <div class="admin-content">
+        {{if .FlashSuccess}}
+        <div class="alert alert-success">
+          <div>{{.FlashSuccess}}</div>
+        </div>
+        {{end}}
+        {{if .FlashError}}
+        <div class="alert alert-danger">
+          <div>{{.FlashError}}</div>
+        </div>
+        {{end}}
+
+        {{template "admin_content" .}}
+      </div>
+    </main>
+  </div>
+</body>
+</html>
+{{end}}

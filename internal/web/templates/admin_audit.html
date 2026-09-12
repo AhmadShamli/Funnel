@@ -1,0 +1,49 @@
+{{define "admin_title"}}Audit Logs{{end}}
+{{define "admin_content"}}
+<div class="content-header">
+  <div>
+    <h2>Administrative & Security Audit Logs</h2>
+    <p style="color: var(--text-secondary); font-size: 0.9rem;">
+      Immutable audit history for authentication events, grants, and firewall modifications
+    </p>
+  </div>
+</div>
+
+<div class="table-container">
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Event Type</th>
+        <th>Actor</th>
+        <th>Target IP</th>
+        <th>Details JSON</th>
+        <th>Timestamp</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Events}}
+      <tr>
+        <td>#{{.ID}}</td>
+        <td>
+          <span class="badge {{if eq .EventType "VISITOR_LOGIN_FAILED"}}badge-danger{{else if eq .EventType "DISTRIBUTED_BRUTE_FORCE_DETECTED"}}badge-danger{{else if eq .EventType "VISITOR_GRANT_CREATED"}}badge-success{{else}}badge-info{{end}}">
+            {{.EventType}}
+          </span>
+        </td>
+        <td>{{.ActorType}} ({{.ActorIdentifier}})</td>
+        <td><code>{{if .TargetIP}}{{.TargetIP}}{{else}}-{{end}}</code></td>
+        <td style="font-family: monospace; font-size: 0.8rem; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{.DetailsJSON}}">
+          {{.DetailsJSON}}
+        </td>
+        <td style="font-size: 0.85rem; color: var(--text-secondary);">{{.CreatedAt.Format "Jan 02 15:04:05 UTC"}}</td>
+      </tr>
+      {{else}}
+      <tr>
+        <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">No audit records found</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
+{{template "admin_layout" .}}

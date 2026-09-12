@@ -1,0 +1,117 @@
+{{define "admin_title"}}Allowed Networks{{end}}
+{{define "admin_content"}}
+<div class="content-header">
+  <div>
+    <h2>Allowed Networks (IP / CIDR Policies)</h2>
+    <p style="color: var(--text-secondary); font-size: 0.9rem;">
+      Configure IP/CIDR subnets for automated access or restricted login requirements
+    </p>
+  </div>
+  <button type="button" class="btn btn-primary btn-sm" data-modal-open="create-network-modal">+ Add Network CIDR</button>
+</div>
+
+<div class="table-container">
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Network CIDR</th>
+        <th>Mode</th>
+        <th>Port Groups</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Networks}}
+      <tr>
+        <td><strong>{{.Name}}</strong></td>
+        <td><code>{{.NetworkCIDR}}</code></td>
+        <td>
+          <span class="badge {{if eq .Mode "always_allowed"}}badge-success{{else}}badge-warning{{end}}">
+            {{.Mode}}
+          </span>
+        </td>
+        <td>
+          <div class="flex-row" style="flex-wrap: wrap; gap: 0.25rem;">
+            {{range .PortGroups}}
+            <span class="port-badge" style="font-size: 0.75rem;">{{.Name}}</span>
+            {{else}}
+            <span style="color: var(--text-muted); font-size: 0.8rem;">All Active Groups</span>
+            {{end}}
+          </div>
+        </td>
+        <td>
+          {{if .IsActive}}<span class="badge badge-success">Active</span>{{else}}<span class="badge badge-danger">Inactive</span>{{end}}
+        </td>
+        <td>
+          <form action="/admin/allowed-networks/{{.ID}}/delete" method="POST" style="margin: 0;" onsubmit="return confirm('Delete allowed network rule {{.Name}}?');">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {{else}}
+      <tr>
+        <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">No network rules configured yet</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+
+<!-- Create Network Rule Modal -->
+<div id="create-network-modal" class="modal-overlay" style="display: none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>Add Allowed Network Rule</h3>
+      <button type="button" class="modal-close" data-modal-close>✕</button>
+    </div>
+    <form action="/admin/allowed-networks" method="POST">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+      <div class="form-group">
+        <label for="net_name">Rule Name</label>
+        <input type="text" id="net_name" name="name" required placeholder="e.g. Office Subnet or Branch Office">
+      </div>
+
+      <div class="form-group">
+        <label for="net_cidr">Network CIDR or Single IP</label>
+        <input type="text" id="net_cidr" name="network_cidr" required placeholder="e.g. 198.51.100.0/24 or 2001:db8::/48" style="font-family: monospace;">
+      </div>
+
+      <div class="flex-row">
+        <div class="form-group" style="flex: 1;">
+          <label for="net_mode">Authorization Mode</label>
+          <select id="net_mode" name="mode">
+            <option value="always_allowed">Always-Allowed (No Password Required)</option>
+            <option value="login_required">Login-Required (Enforce password)</option>
+          </select>
+        </div>
+        <div class="form-group" style="flex: 1;">
+          <label for="net_duration">Grant Duration (Sec)</label>
+          <input type="number" id="net_duration" name="grant_duration_seconds" value="3600" min="60" required>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Port Groups to Grant</label>
+        <div style="max-height: 120px; overflow-y: auto; background: var(--bg-primary); border: 1px solid var(--border-color); padding: 0.5rem; border-radius: var(--radius-sm);">
+          {{range .PortGroups}}
+          <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: normal; margin-bottom: 0.25rem;">
+            <input type="checkbox" name="port_group_ids[]" value="{{.ID}}">
+            <span>{{.Name}} ({{len .Ports}} ports)</span>
+          </label>
+          {{end}}
+        </div>
+      </div>
+
+      <div class="flex-row" style="margin-top: 1.5rem;">
+        <button type="button" class="btn btn-secondary" style="flex: 1;" data-modal-close>Cancel</button>
+        <button type="submit" class="btn btn-primary" style="flex: 1;">Save Network Rule</button>
+      </div>
+    </form>
+  </div>
+</div>
+{{end}}
+{{template "admin_layout" .}}

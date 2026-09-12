@@ -1,0 +1,34 @@
+services:
+  funnel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: funnel
+    restart: unless-stopped
+    pid: host
+    cap_add:
+      - SYS_ADMIN
+      - NET_ADMIN
+    expose:
+      - "${FUNNEL_PORT:-8000}"
+    networks:
+      - proxy_network
+    volumes:
+      - funnel_data:/data
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/funnel", "health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+networks:
+  proxy_network:
+    external: true
+    name: ${EXTERNAL_NETWORK_NAME:-web_proxy}
+
+volumes:
+  funnel_data:
+    name: ${FUNNEL_VOLUME_NAME:-funnel_data}

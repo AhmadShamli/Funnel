@@ -1,0 +1,2 @@
+# Restricted execution rights for unprivileged 'funnel' user
+funnel ALL=(root) NOPASSWD: /usr/local/bin/funnel helper *, /usr/bin/nsenter --net=/proc/1/ns/net /usr/local/bin/funnel helper *

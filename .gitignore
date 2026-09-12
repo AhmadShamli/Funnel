@@ -1,0 +1,19 @@
+# Binaries and builds
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Local data & environment
+data/
+*.db
+*.db-wal
+*.db-shm
+.env
+
+# OS / Editor artifacts
+.DS_Store
+*.swp
+*.swo
+*~

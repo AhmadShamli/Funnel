@@ -1,0 +1,78 @@
+{{define "admin_title"}}Dashboard{{end}}
+{{define "admin_content"}}
+<div class="content-header">
+  <h2>Operational Overview</h2>
+  <div>
+    <a href="/admin/grants" class="btn btn-primary btn-sm">Inspect Active Grants</a>
+  </div>
+</div>
+
+<div class="metrics-grid">
+  <div class="metric-card">
+    <div class="metric-label">Active Port Grants</div>
+    <div class="metric-value">{{.ActiveGrantsCount}}</div>
+    <div style="font-size: 0.8rem; color: var(--text-secondary);">Currently open on host firewall</div>
+  </div>
+
+  <div class="metric-card">
+    <div class="metric-label">Active Access Keys</div>
+    <div class="metric-value">{{.ActiveKeysCount}}</div>
+    <div style="font-size: 0.8rem; color: var(--text-secondary);">Password authentication keys</div>
+  </div>
+
+  <div class="metric-card">
+    <div class="metric-label">Port Groups</div>
+    <div class="metric-value">{{.PortGroupsCount}}</div>
+    <div style="font-size: 0.8rem; color: var(--text-secondary);">Managed rule definitions</div>
+  </div>
+
+  <div class="metric-card">
+    <div class="metric-label">Firewall Backend</div>
+    <div class="metric-value" style="font-size: 1.4rem; margin-top: 0.75rem; text-transform: uppercase; color: #38bdf8;">
+      {{.ActiveBackend}}
+    </div>
+    <div style="font-size: 0.8rem; color: var(--text-secondary);">Engine manipulating tables</div>
+  </div>
+</div>
+
+<div class="content-header" style="margin-top: 2rem;">
+  <h3>Recent Audit Events</h3>
+  <a href="/admin/audit" class="btn btn-secondary btn-sm">View Full Log</a>
+</div>
+
+<div class="table-container">
+  <table>
+    <thead>
+      <tr>
+        <th>Event</th>
+        <th>Actor</th>
+        <th>Target IP</th>
+        <th>Details</th>
+        <th>Time</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .RecentEvents}}
+      <tr>
+        <td>
+          <span class="badge {{if eq .EventType "VISITOR_LOGIN_FAILED"}}badge-danger{{else if eq .EventType "VISITOR_GRANT_CREATED"}}badge-success{{else}}badge-info{{end}}">
+            {{.EventType}}
+          </span>
+        </td>
+        <td>{{.ActorType}} ({{.ActorIdentifier}})</td>
+        <td><code>{{.TargetIP}}</code></td>
+        <td style="font-family: monospace; font-size: 0.8rem; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+          {{.DetailsJSON}}
+        </td>
+        <td style="color: var(--text-secondary); font-size: 0.85rem;">{{.CreatedAt.Format "Jan 02 15:04:05"}}</td>
+      </tr>
+      {{else}}
+      <tr>
+        <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">No audit events recorded yet</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
+{{template "admin_layout" .}}

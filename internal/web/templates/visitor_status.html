@@ -1,0 +1,101 @@
+{{define "title"}}Active Access Status{{end}}
+{{define "content"}}
+<div class="center-container">
+  <div class="status-card">
+    <div class="auth-header" style="margin-bottom: 1.5rem;">
+      <h1>⚡ Access Active</h1>
+      <p>Your address has been granted temporary firewall access</p>
+      <div class="ip-pill">
+        <span>📍 Authorized IP:</span>
+        <strong>{{.ClientIP}}</strong>
+      </div>
+    </div>
+
+    {{if .FlashSuccess}}
+    <div class="alert alert-success">
+      <div>{{.FlashSuccess}}</div>
+    </div>
+    {{end}}
+    {{if .FlashError}}
+    <div class="alert alert-danger">
+      <div>{{.FlashError}}</div>
+    </div>
+    {{end}}
+
+    <div class="countdown-box" data-countdown-seconds="{{.RemainingSeconds}}">
+      <div class="countdown-digits">--:--:--</div>
+      <div class="countdown-label">Time Remaining Until Access Closes</div>
+    </div>
+
+    <div id="session-expired-notice" style="display: none;" class="alert alert-warning">
+      <div class="alert-title">Access Expired</div>
+      <p>Your temporary access session has concluded. <a href="/">Return to login</a> to re-authenticate.</p>
+    </div>
+
+    <div style="margin-bottom: 1.5rem;">
+      <label>Approved Ports</label>
+      <div class="ports-grid">
+        {{range .AllowedPorts}}
+        <div class="port-badge">✓ {{.Port}}/{{.Protocol}}</div>
+        {{else}}
+        <div style="color: var(--text-muted); font-size: 0.9rem;">No specific individual ports (Global network policy)</div>
+        {{end}}
+      </div>
+    </div>
+
+    <div class="flex-row" style="margin-top: 2rem;">
+      {{if .CanExtend}}
+      <button type="button" class="btn btn-primary" style="flex: 1;" data-modal-open="extend-modal">
+        Extend Access
+      </button>
+      {{else}}
+      <button type="button" class="btn btn-secondary" style="flex: 1;" disabled title="Maximum session limit reached or extensions not allowed">
+        Extensions Unavailable
+      </button>
+      {{end}}
+
+      <form action="/access/revoke" method="POST" style="flex: 1;">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn btn-danger" style="width: 100%;">
+          Disconnect
+        </button>
+      </form>
+    </div>
+
+    <div style="margin-top: 2rem; text-align: center; font-size: 0.8rem; color: var(--text-muted);">
+      <a href="/" style="color: var(--text-muted);">Home</a>
+    </div>
+  </div>
+</div>
+
+<!-- Password Challenge Modal for Extension -->
+<div id="extend-modal" class="modal-overlay" style="display: none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>Extend Access Duration</h3>
+      <button type="button" class="modal-close" data-modal-close>✕</button>
+    </div>
+    <form action="/access/extend" method="POST">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      
+      <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem;">
+        Enter your access password to confirm extension of your active port session:
+      </p>
+
+      <div class="form-group">
+        <label for="extend_password">Access Password</label>
+        <div class="flex-row">
+          <input type="password" id="extend_password" name="password" required autofocus placeholder="Enter password">
+          <button type="button" class="btn btn-secondary toggle-password" data-target="extend_password" style="padding: 0.75rem;">Show</button>
+        </div>
+      </div>
+
+      <div class="flex-row" style="margin-top: 1.5rem;">
+        <button type="button" class="btn btn-secondary" style="flex: 1;" data-modal-close>Cancel</button>
+        <button type="submit" class="btn btn-primary" style="flex: 1;">Confirm Extend</button>
+      </div>
+    </form>
+  </div>
+</div>
+{{end}}
+{{template "layout" .}}

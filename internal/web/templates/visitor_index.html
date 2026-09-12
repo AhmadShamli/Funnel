@@ -1,0 +1,84 @@
+{{define "title"}}Port Access{{end}}
+{{define "content"}}
+<div class="center-container">
+  <div class="auth-card">
+    <div class="auth-header">
+      <h1>⚡ Funnel Access</h1>
+      <p>Secure, temporary firewall port access</p>
+      <div class="ip-pill">
+        <span>📍 Detected IP:</span>
+        <strong>{{.ClientIP}}</strong>
+      </div>
+    </div>
+
+    {{if .Error}}
+    <div class="alert alert-danger">
+      <div class="alert-title">Access Denied</div>
+      <div>{{.Error}}</div>
+    </div>
+    {{end}}
+
+    {{if eq .RateLimitStatus.Level 2}}
+    <!-- Level 2: Distributed Circuit Breaker Lockdown -->
+    <div class="alert alert-warning">
+      <div class="alert-title">Authentication Temporarily Paused</div>
+      <p>Unusual distributed activity has been detected across multiple addresses. New port authorizations are temporarily paused for system security.</p>
+      <div class="countdown-box" data-countdown-seconds="{{.RateLimitStatus.RetryAfterSeconds}}" data-format-minutes="true" style="margin: 1rem 0; padding: 0.75rem;">
+        <div class="countdown-digits" style="font-size: 1.5rem;">--:--</div>
+        <div class="countdown-label">Estimated cooldown remaining</div>
+      </div>
+      <p style="font-size: 0.85rem; color: #cbd5e1; margin-top: 0.5rem;">
+        🛡️ If you already have an active access session, your existing open ports remain active and unaffected.
+      </p>
+      <div style="margin-top: 0.75rem; text-align: center;">
+        <a href="/access/current" class="btn btn-secondary btn-sm">Check Active Session Status</a>
+      </div>
+    </div>
+
+    {{else if eq .RateLimitStatus.Level 1}}
+    <!-- Level 1: Per-IP Delay -->
+    <div class="alert alert-danger">
+      <div class="alert-title">Too Many Attempts from Your IP</div>
+      <p>For security, authentication from your address is temporarily paused. Please wait before trying again.</p>
+      <div class="countdown-box" data-countdown-seconds="{{.RateLimitStatus.RetryAfterSeconds}}" data-format-minutes="true" style="margin: 1rem 0; padding: 0.75rem;">
+        <div class="countdown-digits" style="font-size: 1.5rem;">--:--</div>
+        <div class="countdown-label">Try again in</div>
+      </div>
+    </div>
+
+    {{else if .IsAlwaysAllowed}}
+    <!-- Always-Allowed Mode -->
+    <div class="alert alert-success">
+      <div class="alert-title">Automatic Authorization Active</div>
+      <p>Your network address <strong>{{.ClientIP}}</strong> is recognized under an automated policy. Ports are open and available.</p>
+    </div>
+    <div style="text-align: center; margin-top: 1.5rem;">
+      <a href="/access/current" class="btn btn-primary">View Authorized Ports</a>
+    </div>
+
+    {{else}}
+    <!-- Standard Password Access Form -->
+    <form action="/access" method="POST">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      
+      <div class="form-group">
+        <label for="password">Access Password</label>
+        <div class="flex-row">
+          <input type="password" id="password" name="password" required autofocus placeholder="Enter your access password" autocomplete="current-password">
+          <button type="button" class="btn btn-secondary toggle-password" data-target="password" style="padding: 0.75rem;">Show</button>
+        </div>
+      </div>
+
+      <button type="submit" id="submit-btn" class="btn btn-primary" style="margin-top: 0.5rem;">
+        Grant Port Access
+      </button>
+    </form>
+    {{end}}
+
+    <div style="margin-top: 2rem; text-align: center; font-size: 0.8rem; color: var(--text-muted);">
+      <a href="/admin/login" style="color: var(--text-muted);">Administrator Portal</a>
+    </div>
+  </div>
+</div>
+{{end}}
+{{template "layout" .}}

@@ -1,0 +1,57 @@
+{{define "title"}}Initial Setup Wizard{{end}}
+{{define "content"}}
+<div class="center-container">
+  <div class="auth-card">
+    <div class="auth-header">
+      <h1>🚀 Funnel Setup</h1>
+      <p>Initialize the first administrator account</p>
+    </div>
+
+    {{if .Error}}
+    <div class="alert alert-danger">
+      <div class="alert-title">Setup Error</div>
+      <div>{{.Error}}</div>
+    </div>
+    {{end}}
+
+    <div class="alert alert-warning" style="margin-bottom: 1.5rem;">
+      <div class="alert-title">Bootstrap Token Required</div>
+      <p style="font-size: 0.85rem;">
+        Check the application console / container stdout log (e.g. <code>docker compose logs funnel</code> or <code>journalctl -u funnel</code>) for the one-time 32-character setup token.
+      </p>
+    </div>
+
+    <form action="/setup" method="POST">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+      <div class="form-group">
+        <label for="bootstrap_token">Bootstrap Token</label>
+        <input type="text" id="bootstrap_token" name="bootstrap_token" required autofocus placeholder="32-character hex token from stdout" autocomplete="off" style="font-family: monospace;">
+      </div>
+
+      <div class="form-group">
+        <label for="username">Administrator Username</label>
+        <input type="text" id="username" name="username" required placeholder="admin" minlength="3" autocomplete="username">
+      </div>
+
+      <div class="form-group">
+        <label for="password">Administrator Password</label>
+        <div class="flex-row">
+          <input type="password" id="password" name="password" required placeholder="Minimum 12 characters" minlength="12" autocomplete="new-password">
+          <button type="button" class="btn btn-secondary toggle-password" data-target="password" style="padding: 0.75rem;">Show</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="confirm_password">Confirm Password</label>
+        <input type="password" id="confirm_password" name="confirm_password" required placeholder="Re-enter password" minlength="12" autocomplete="new-password">
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="margin-top: 1rem;">
+        Complete Setup & Create Administrator
+      </button>
+    </form>
+  </div>
+</div>
+{{end}}
+{{template "layout" .}}

@@ -1,0 +1,74 @@
+{{define "admin_title"}}Active & Historical Grants{{end}}
+{{define "admin_content"}}
+<div class="content-header">
+  <div>
+    <h2>Port Authorization Grants</h2>
+    <p style="color: var(--text-secondary); font-size: 0.9rem;">
+      Real-time active firewall grants and historical session records
+    </p>
+  </div>
+</div>
+
+<div class="table-container">
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Source IP</th>
+        <th>Source Type / Key</th>
+        <th>Approved Ports</th>
+        <th>Granted At</th>
+        <th>Expires At</th>
+        <th>Status</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Grants}}
+      <tr>
+        <td>#{{.ID}}</td>
+        <td><code>{{.SourceIP}}</code></td>
+        <td>
+          {{if eq .GrantSource "password"}}
+            🔑 {{if .AccessKeyName}}{{.AccessKeyName}}{{else}}Password Key{{end}}
+          {{else if eq .GrantSource "always_allowed"}}
+            🌐 Always-Allowed: {{.AllowedNetworkName}}
+          {{else}}
+            ⚙️ {{.GrantSource}}
+          {{end}}
+        </td>
+        <td>
+          <div class="flex-row" style="flex-wrap: wrap; gap: 0.25rem;">
+            {{range .Ports}}
+            <span class="port-badge" style="font-size: 0.75rem;">{{.Port}}/{{.Protocol}}</span>
+            {{end}}
+          </div>
+        </td>
+        <td style="font-size: 0.85rem; color: var(--text-secondary);">{{.GrantedAt.Format "Jan 02 15:04:05"}}</td>
+        <td style="font-size: 0.85rem; color: var(--text-secondary);">{{.ExpiresAt.Format "Jan 02 15:04:05"}}</td>
+        <td>
+          <span class="badge {{if eq .Status "active"}}badge-success{{else if eq .Status "revoked"}}badge-danger{{else}}badge-secondary{{end}}">
+            {{.Status}}
+          </span>
+        </td>
+        <td>
+          {{if eq .Status "active"}}
+          <form action="/admin/grants/{{.ID}}/revoke" method="POST" style="margin: 0;" onsubmit="return confirm('Immediately revoke grant for {{.SourceIP}}?');">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <button type="submit" class="btn btn-danger btn-sm">Revoke</button>
+          </form>
+          {{else}}
+          <span style="color: var(--text-muted); font-size: 0.8rem;">Terminated</span>
+          {{end}}
+        </td>
+      </tr>
+      {{else}}
+      <tr>
+        <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">No grant records found</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
+{{template "admin_layout" .}}

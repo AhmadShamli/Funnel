@@ -1,0 +1,23 @@
+[Unit]
+Description=Funnel Port Access Web Service
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=funnel
+Group=funnel
+EnvironmentFile=-/etc/funnel/funnel.env
+ExecStart=/usr/local/bin/funnel serve
+Restart=always
+RestartSec=3s
+LimitNOFILE=65536
+
+# Security sandbox
+ProtectSystem=full
+ProtectHome=true
+NoNewPrivileges=false
+ReadWritePaths=/var/lib/funnel /run/funnel
+
+[Install]
+WantedBy=multi-user.target

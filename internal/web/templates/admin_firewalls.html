@@ -1,0 +1,87 @@
+{{define "admin_title"}}Firewall Engine{{end}}
+{{define "admin_content"}}
+<div class="content-header">
+  <div>
+    <h2>Firewall Subsystems & Status</h2>
+    <p style="color: var(--text-secondary); font-size: 0.9rem;">
+      Inspect host Linux firewall backends, active driver, and validate tables
+    </p>
+  </div>
+  <form action="/admin/firewalls/validate" method="POST" style="margin: 0;">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <button type="submit" class="btn btn-primary btn-sm">▶ Run Backend Validation</button>
+  </form>
+</div>
+
+<div class="table-container" style="margin-bottom: 2rem;">
+  <table>
+    <thead>
+      <tr>
+        <th>Firewall Driver</th>
+        <th>Installed</th>
+        <th>Operational Status</th>
+        <th>Details / Diagnostic</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Backends}}
+      <tr>
+        <td>
+          <strong style="text-transform: uppercase;">{{.Name}}</strong>
+          {{if eq .Name $.ActiveBackend}}
+          <span class="badge badge-info" style="margin-left: 0.5rem;">ACTIVE DRIVER</span>
+          {{end}}
+        </td>
+        <td>
+          {{if .Installed}}<span class="badge badge-success">Yes</span>{{else}}<span class="badge badge-secondary">No</span>{{end}}
+        </td>
+        <td>
+          {{if .Active}}
+          <span class="badge badge-success">Ready & Active</span>
+          {{else}}
+          <span class="badge badge-warning">Unavailable</span>
+          {{end}}
+        </td>
+        <td style="font-size: 0.85rem; color: var(--text-secondary);">
+          {{if .Error}}<span style="color: #f87171;">{{.Error}}</span>{{else}}Operational{{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+
+<div class="content-header">
+  <h3>Currently Active Host Firewall Rules</h3>
+</div>
+
+<div class="table-container">
+  <table>
+    <thead>
+      <tr>
+        <th>Backend</th>
+        <th>Target IP</th>
+        <th>Protocol</th>
+        <th>Port</th>
+        <th>Comment</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .ActiveRules}}
+      <tr>
+        <td><code>{{.Backend}}</code></td>
+        <td><code>{{.IP}}</code></td>
+        <td>{{.Protocol}}</td>
+        <td><strong>{{.Port}}</strong></td>
+        <td style="color: var(--text-secondary); font-size: 0.85rem;">{{.Comment}}</td>
+      </tr>
+      {{else}}
+      <tr>
+        <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">No active firewall rules in kernel table</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
+{{template "admin_layout" .}}
