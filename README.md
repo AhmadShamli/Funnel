@@ -1,7 +1,7 @@
 # ⚡ Funnel by ExciteCreation
 
 [![GitHub](https://img.shields.io/badge/GitHub-AhmadShamli%2FFunnel-blue?logo=github)](https://github.com/AhmadShamli/Funnel)
-[![Version](https://img.shields.io/badge/version-0.2.0-emerald)](https://github.com/AhmadShamli/Funnel)
+[![Version](https://img.shields.io/badge/version-0.3.0-emerald)](https://github.com/AhmadShamli/Funnel)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 **On-demand, temporary firewall port access for your servers via a simple web interface.**
@@ -113,7 +113,7 @@ To upgrade an existing installation, re-run `install.sh` (or pass `--upgrade`):
 sudo bash deploy/install.sh --upgrade
 
 # Upgrade to a specific version:
-sudo bash deploy/install.sh --version v0.2.0
+sudo bash deploy/install.sh --version v0.3.0
 
 # Check installed version vs latest available release without upgrading:
 bash deploy/install.sh --check
