@@ -29,9 +29,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Create unprivileged user & group
-RUN groupadd -g 10001 funnel && \
-    useradd -u 10001 -g funnel -d /home/funnel -m -s /bin/bash funnel
+# Create unprivileged system user & group without predefining an ID
+RUN groupadd --system funnel && \
+    useradd --system -g funnel -d /home/funnel -m -s /bin/bash funnel
 
 # Install static Go binary from builder
 COPY --from=builder /build/funnel /usr/local/bin/funnel

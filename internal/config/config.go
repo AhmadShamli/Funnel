@@ -67,6 +67,10 @@ LOG_LEVEL=INFO
 # Docker Compose Network Configuration (If running under Docker)
 EXTERNAL_NETWORK_NAME=web_proxy
 FUNNEL_VOLUME_NAME=funnel_data
+
+# Optional: Set specific user/group ID for container (leave commented out to use system-allocated ID upon creation)
+# FUNNEL_UID=1000
+# FUNNEL_GID=1000
 `
 
 // Config holds all configuration parameters for the Funnel service.

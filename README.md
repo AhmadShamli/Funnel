@@ -47,7 +47,7 @@ Access is granted under two authorization modes:
                                      | Forwarded Headers
                       +--------------v--------------+
                       |     Funnel Web Service      |
-                      |  (Unprivileged user: 10001) |
+                      |  (Unprivileged: nonroot/65532)|
                       | - Safe Client IP Resolver   |
                       | - Keyed HMAC-SHA256 Auth    |
                       | - SQLite WAL Database       |
