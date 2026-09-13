@@ -43,7 +43,7 @@ func TestRenderBBCode(t *testing.T) {
 			input:    "[url]https://example.com[/url] and [url=http://example.org/path?a=1&b=2]Click here[/url]",
 			expected: []string{
 				`<a href="https://example.com" target="_blank" rel="noopener noreferrer">https://example.com</a>`,
-				`<a href="http://example.org/path?a=1&amp;amp;b=2" target="_blank" rel="noopener noreferrer">Click here</a>`,
+				`<a href="http://example.org/path?a=1&amp;b=2" target="_blank" rel="noopener noreferrer">Click here</a>`,
 			},
 		},
 		{
@@ -102,6 +102,25 @@ func TestRenderBBCode(t *testing.T) {
 			name:     "alignment tags",
 			input:    "[center]Centered[/center] [right]Right-aligned[/right]",
 			expected: []string{`<div style="text-align: center;">Centered</div>`, `<div style="text-align: right;">Right-aligned</div>`},
+		},
+		{
+			name:  "minecraft uri scheme with quoted url, center, and percentage sizes",
+			input: "[center]\n[size=200][b]🎮 JOIN MINECRAFT[/b][/size]\n\n[url=\"minecraft://connect?serverUrl=15.235.199.194&serverPort=19132\"]\n[size=150][b]🟢 JOIN SURVIVAL[/b][/size]\n[/url]\n\n[url=\"minecraft://connect?serverUrl=15.235.199.194&serverPort=19134\"]\n[size=150][b]🔵 JOIN CREATIVE[/b][/size]\n[/url]\n\n[/center]",
+			expected: []string{
+				`<div style="text-align: center;">`,
+				`<span style="font-size: 200%;"><strong>🎮 JOIN MINECRAFT</strong></span>`,
+				`<a href="minecraft://connect?serverUrl=15.235.199.194&amp;serverPort=19132" target="_blank" rel="noopener noreferrer"><span style="font-size: 150%;"><strong>🟢 JOIN SURVIVAL</strong></span></a>`,
+				`<a href="minecraft://connect?serverUrl=15.235.199.194&amp;serverPort=19134" target="_blank" rel="noopener noreferrer"><span style="font-size: 150%;"><strong>🔵 JOIN CREATIVE</strong></span></a>`,
+				`</div>`,
+			},
+		},
+		{
+			name:     "steam and ssh custom uri schemes",
+			input:    `[url=steam://connect/127.0.0.1:27015]Join CS:GO[/url] and [url="ssh://root@example.com:22"]SSH[/url]`,
+			expected: []string{
+				`<a href="steam://connect/127.0.0.1:27015" target="_blank" rel="noopener noreferrer">Join CS:GO</a>`,
+				`<a href="ssh://root@example.com:22" target="_blank" rel="noopener noreferrer">SSH</a>`,
+			},
 		},
 	}
 

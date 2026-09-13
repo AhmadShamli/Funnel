@@ -730,6 +730,13 @@ tr:hover td {
   color: #60a5fa;
 }
 
+.bbcode-content a strong,
+.bbcode-content a b,
+.bbcode-content a:hover strong,
+.bbcode-content a:hover b {
+  color: inherit;
+}
+
 .bbcode-content strong,
 .bbcode-content b {
   font-weight: 700;
