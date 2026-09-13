@@ -35,8 +35,25 @@ func TestEmbeddedTemplates(t *testing.T) {
 			if !strings.Contains(body, "https://github.com/AhmadShamli/Funnel") {
 				t.Errorf("template %s missing github repository link", name)
 			}
-			if !strings.Contains(body, "v0.4.1") {
-				t.Errorf("template %s missing version 'v0.4.1'", name)
+			if !strings.Contains(body, "v0.4.2") {
+				t.Errorf("template %s missing version 'v0.4.2'", name)
+			}
+		}
+		if name == "visitor_status" {
+			if !strings.Contains(body, `class="ip-pill"`) {
+				t.Errorf("visitor_status missing ip-pill")
+			}
+			if !strings.Contains(body, `class="ip-label"`) {
+				t.Errorf("visitor_status missing ip-label")
+			}
+			if !strings.Contains(body, `class="ip-value"`) {
+				t.Errorf("visitor_status missing ip-value")
+			}
+			if !strings.Contains(body, `class="countdown-box"`) {
+				t.Errorf("visitor_status missing countdown-box")
+			}
+			if !strings.Contains(body, `class="countdown-digits"`) {
+				t.Errorf("visitor_status missing countdown-digits")
 			}
 		}
 		if name == "admin_keys" {
@@ -50,5 +67,21 @@ func TestEmbeddedTemplates(t *testing.T) {
 				t.Errorf("admin_keys key_password input missing autocomplete=\"new-password\"")
 			}
 		}
+	}
+
+	// Verify static CSS contains responsive rules for mobile view
+	cssData, err := EmbeddedFS.ReadFile("static/style.css")
+	if err != nil {
+		t.Fatalf("failed to read embedded style.css: %v", err)
+	}
+	cssStr := string(cssData)
+	if !strings.Contains(cssStr, "@media (max-width: 640px)") {
+		t.Errorf("style.css missing mobile @media (max-width: 640px)")
+	}
+	if !strings.Contains(cssStr, "flex-direction: column") {
+		t.Errorf("style.css missing flex-direction: column for two-row mobile layout")
+	}
+	if !strings.Contains(cssStr, "clamp(") {
+		t.Errorf("style.css missing clamp for fluid countdown digits sizing")
 	}
 }
