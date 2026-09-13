@@ -17,7 +17,7 @@ LimitNOFILE=65536
 ProtectSystem=full
 ProtectHome=true
 NoNewPrivileges=false
-ReadWritePaths=/var/lib/funnel /run/funnel
+ReadWritePaths=/var/lib/funnel /run/funnel -/etc/ufw
 
 [Install]
 WantedBy=multi-user.target

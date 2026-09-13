@@ -78,7 +78,7 @@ func TestHealthEndpoint(t *testing.T) {
 
 	body := rec.Body.String()
 	if !strings.Contains(body, `"status":"ok"`) || !strings.Contains(body, `"database":"connected"`) ||
-		!strings.Contains(body, `"version":"0.3.0"`) || !strings.Contains(body, `"app":"Funnel by ExciteCreation"`) ||
+		!strings.Contains(body, `"version":"0.3.1"`) || !strings.Contains(body, `"app":"Funnel by ExciteCreation"`) ||
 		!strings.Contains(body, `"repository":"https://github.com/AhmadShamli/Funnel"`) {
 		t.Fatalf("unexpected health response: %s", body)
 	}
