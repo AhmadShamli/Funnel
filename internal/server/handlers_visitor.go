@@ -125,6 +125,7 @@ func (h *VisitorHandlers) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		"CSRFToken":        GetCSRFToken(r),
 		"Grant":            result.Grant,
 		"AllowedPorts":     result.AllowedPorts,
+		"PortGroups":       result.PortGroups,
 		"RemainingSeconds": result.RemainingSeconds,
 		"CanExtend":        result.CanExtend,
 		"FlashSuccess":     r.URL.Query().Get("success"),

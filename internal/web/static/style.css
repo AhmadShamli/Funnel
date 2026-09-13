@@ -682,3 +682,119 @@ tr:hover td {
   text-decoration: underline;
 }
 
+/* Port Group Notes & BBCode Rendering */
+.port-group-notes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.port-group-note-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 1rem;
+  text-align: left;
+}
+
+.port-group-note-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.port-group-note-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #38bdf8;
+  letter-spacing: 0.02em;
+}
+
+.bbcode-content {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  line-height: 1.55;
+  word-break: break-word;
+}
+
+.bbcode-content a {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.bbcode-content a:hover {
+  color: #60a5fa;
+}
+
+.bbcode-content strong,
+.bbcode-content b {
+  font-weight: 700;
+  color: #fff;
+}
+
+.bbcode-content em,
+.bbcode-content i {
+  font-style: italic;
+}
+
+.bbcode-content u {
+  text-decoration: underline;
+}
+
+.bbcode-content s,
+.bbcode-content del {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.bbcode-content pre.bbcode-code {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.8rem;
+  margin: 0.4rem 0;
+  overflow-x: auto;
+  font-family: monospace;
+  font-size: 0.85rem;
+  color: #38bdf8;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.bbcode-content blockquote.bbcode-quote {
+  border-left: 3px solid var(--primary);
+  background: rgba(59, 130, 246, 0.08);
+  padding: 0.5rem 0.75rem;
+  margin: 0.5rem 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  color: var(--text-secondary);
+}
+
+.bbcode-content .bbcode-quote-author {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #93c5fd;
+  margin-bottom: 0.25rem;
+}
+
+.bbcode-content ul.bbcode-list,
+.bbcode-content ol.bbcode-list {
+  padding-left: 1.25rem;
+  margin: 0.4rem 0;
+}
+
+.bbcode-content li {
+  margin-bottom: 0.2rem;
+}
+
+.bbcode-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+  margin: 0.35rem 0;
+}
+

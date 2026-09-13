@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS port_groups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE NOT NULL,
     description TEXT NOT NULL DEFAULT '',
+    custom_text TEXT NOT NULL DEFAULT '',
     availability_mode TEXT NOT NULL DEFAULT 'key_only',
     allow_extend INTEGER NOT NULL DEFAULT 1,
     max_extensions INTEGER NULL,

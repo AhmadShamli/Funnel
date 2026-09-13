@@ -39,6 +39,7 @@ func NewTemplateManager() (*TemplateManager, error) {
 			}
 			return false
 		},
+		"renderBBCode": RenderBBCode,
 	}
 
 	pages := []struct {

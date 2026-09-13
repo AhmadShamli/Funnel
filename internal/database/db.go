@@ -52,8 +52,12 @@ func Open(dbPath string) (*DB, error) {
 
 // Migrate executes initial schema and index creation.
 func (db *DB) Migrate(ctx context.Context) error {
-	_, err := db.ExecContext(ctx, SchemaSQL)
-	return err
+	if _, err := db.ExecContext(ctx, SchemaSQL); err != nil {
+		return err
+	}
+	// Ensure custom_text column exists on port_groups for existing databases
+	_, _ = db.ExecContext(ctx, "ALTER TABLE port_groups ADD COLUMN custom_text TEXT NOT NULL DEFAULT ''")
+	return nil
 }
 
 // Helper parsing functions for SQLite string datetimes
@@ -300,11 +304,11 @@ func (db *DB) PruneExpiredSessions(ctx context.Context, now time.Time) (int64, e
 func (db *DB) CreatePortGroup(ctx context.Context, pg *models.PortGroup) error {
 	res, err := db.ExecContext(ctx, `
 		INSERT INTO port_groups (
-			name, description, availability_mode, allow_extend, max_extensions,
+			name, description, custom_text, availability_mode, allow_extend, max_extensions,
 			grant_duration_seconds, max_duration_seconds, valid_from, valid_until,
 			network_match_mode, is_active
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		pg.Name, pg.Description, pg.AvailabilityMode, pg.AllowExtend, pg.MaxExtensions,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		pg.Name, pg.Description, pg.CustomText, pg.AvailabilityMode, pg.AllowExtend, pg.MaxExtensions,
 		pg.GrantDurationSeconds, pg.MaxDurationSeconds, formatNullTime(pg.ValidFrom),
 		formatNullTime(pg.ValidUntil), pg.NetworkMatchMode, pg.IsActive,
 	)
@@ -330,7 +334,7 @@ func (db *DB) CreatePortGroup(ctx context.Context, pg *models.PortGroup) error {
 
 func (db *DB) GetPortGroupByID(ctx context.Context, id int64) (*models.PortGroup, error) {
 	row := db.QueryRowContext(ctx, `
-		SELECT id, name, description, availability_mode, allow_extend, max_extensions,
+		SELECT id, name, description, custom_text, availability_mode, allow_extend, max_extensions,
 		       grant_duration_seconds, max_duration_seconds, valid_from, valid_until,
 		       network_match_mode, is_active
 		FROM port_groups WHERE id = ?`, id)
@@ -338,7 +342,7 @@ func (db *DB) GetPortGroupByID(ctx context.Context, id int64) (*models.PortGroup
 	var pg models.PortGroup
 	var validFrom, validUntil sql.NullString
 	if err := row.Scan(
-		&pg.ID, &pg.Name, &pg.Description, &pg.AvailabilityMode, &pg.AllowExtend, &pg.MaxExtensions,
+		&pg.ID, &pg.Name, &pg.Description, &pg.CustomText, &pg.AvailabilityMode, &pg.AllowExtend, &pg.MaxExtensions,
 		&pg.GrantDurationSeconds, &pg.MaxDurationSeconds, &validFrom, &validUntil,
 		&pg.NetworkMatchMode, &pg.IsActive,
 	); err != nil {
@@ -357,7 +361,7 @@ func (db *DB) GetPortGroupByID(ctx context.Context, id int64) (*models.PortGroup
 
 func (db *DB) ListPortGroups(ctx context.Context) ([]models.PortGroup, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT id, name, description, availability_mode, allow_extend, max_extensions,
+		SELECT id, name, description, custom_text, availability_mode, allow_extend, max_extensions,
 		       grant_duration_seconds, max_duration_seconds, valid_from, valid_until,
 		       network_match_mode, is_active
 		FROM port_groups ORDER BY id ASC`)
@@ -371,7 +375,7 @@ func (db *DB) ListPortGroups(ctx context.Context) ([]models.PortGroup, error) {
 		var pg models.PortGroup
 		var validFrom, validUntil sql.NullString
 		if err := rows.Scan(
-			&pg.ID, &pg.Name, &pg.Description, &pg.AvailabilityMode, &pg.AllowExtend, &pg.MaxExtensions,
+			&pg.ID, &pg.Name, &pg.Description, &pg.CustomText, &pg.AvailabilityMode, &pg.AllowExtend, &pg.MaxExtensions,
 			&pg.GrantDurationSeconds, &pg.MaxDurationSeconds, &validFrom, &validUntil,
 			&pg.NetworkMatchMode, &pg.IsActive,
 		); err != nil {
@@ -396,11 +400,11 @@ func (db *DB) ListPortGroups(ctx context.Context) ([]models.PortGroup, error) {
 func (db *DB) UpdatePortGroup(ctx context.Context, pg *models.PortGroup) error {
 	_, err := db.ExecContext(ctx, `
 		UPDATE port_groups SET
-			name = ?, description = ?, availability_mode = ?, allow_extend = ?,
+			name = ?, description = ?, custom_text = ?, availability_mode = ?, allow_extend = ?,
 			max_extensions = ?, grant_duration_seconds = ?, max_duration_seconds = ?,
 			valid_from = ?, valid_until = ?, network_match_mode = ?, is_active = ?
 		WHERE id = ?`,
-		pg.Name, pg.Description, pg.AvailabilityMode, pg.AllowExtend,
+		pg.Name, pg.Description, pg.CustomText, pg.AvailabilityMode, pg.AllowExtend,
 		pg.MaxExtensions, pg.GrantDurationSeconds, pg.MaxDurationSeconds,
 		formatNullTime(pg.ValidFrom), formatNullTime(pg.ValidUntil),
 		pg.NetworkMatchMode, pg.IsActive, pg.ID,
@@ -631,7 +635,7 @@ func (db *DB) DeleteAccessKey(ctx context.Context, id int64) error {
 
 func (db *DB) GetAccessKeyPortGroups(ctx context.Context, accessKeyID int64) ([]models.PortGroup, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT pg.id, pg.name, pg.description, pg.availability_mode, pg.allow_extend, pg.max_extensions,
+		SELECT pg.id, pg.name, pg.description, pg.custom_text, pg.availability_mode, pg.allow_extend, pg.max_extensions,
 		       pg.grant_duration_seconds, pg.max_duration_seconds, pg.valid_from, pg.valid_until,
 		       pg.network_match_mode, pg.is_active
 		FROM port_groups pg
@@ -647,7 +651,7 @@ func (db *DB) GetAccessKeyPortGroups(ctx context.Context, accessKeyID int64) ([]
 		var pg models.PortGroup
 		var validFrom, validUntil sql.NullString
 		if err := rows.Scan(
-			&pg.ID, &pg.Name, &pg.Description, &pg.AvailabilityMode, &pg.AllowExtend, &pg.MaxExtensions,
+			&pg.ID, &pg.Name, &pg.Description, &pg.CustomText, &pg.AvailabilityMode, &pg.AllowExtend, &pg.MaxExtensions,
 			&pg.GrantDurationSeconds, &pg.MaxDurationSeconds, &validFrom, &validUntil,
 			&pg.NetworkMatchMode, &pg.IsActive,
 		); err != nil {
@@ -800,7 +804,7 @@ func (db *DB) DeleteAllowedNetwork(ctx context.Context, id int64) error {
 
 func (db *DB) GetAllowedNetworkPortGroups(ctx context.Context, allowedNetworkID int64) ([]models.PortGroup, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT pg.id, pg.name, pg.description, pg.availability_mode, pg.allow_extend, pg.max_extensions,
+		SELECT pg.id, pg.name, pg.description, pg.custom_text, pg.availability_mode, pg.allow_extend, pg.max_extensions,
 		       pg.grant_duration_seconds, pg.max_duration_seconds, pg.valid_from, pg.valid_until,
 		       pg.network_match_mode, pg.is_active
 		FROM port_groups pg
@@ -816,7 +820,7 @@ func (db *DB) GetAllowedNetworkPortGroups(ctx context.Context, allowedNetworkID 
 		var pg models.PortGroup
 		var validFrom, validUntil sql.NullString
 		if err := rows.Scan(
-			&pg.ID, &pg.Name, &pg.Description, &pg.AvailabilityMode, &pg.AllowExtend, &pg.MaxExtensions,
+			&pg.ID, &pg.Name, &pg.Description, &pg.CustomText, &pg.AvailabilityMode, &pg.AllowExtend, &pg.MaxExtensions,
 			&pg.GrantDurationSeconds, &pg.MaxDurationSeconds, &validFrom, &validUntil,
 			&pg.NetworkMatchMode, &pg.IsActive,
 		); err != nil {

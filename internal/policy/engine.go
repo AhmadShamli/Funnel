@@ -53,6 +53,7 @@ type VisitorStatusResult struct {
 	HasActiveGrant    bool
 	Grant             *models.AccessGrant
 	AllowedPorts      []models.PortRule
+	PortGroups        []models.PortGroup
 	RemainingSeconds  int
 	CanExtend         bool
 	RateLimitStatus   auth.RateLimitResult
@@ -77,6 +78,7 @@ func (e *Engine) EvaluateVisitor(ctx context.Context, clientIP netip.Addr, token
 				result.HasActiveGrant = true
 				result.Grant = grant
 				result.AllowedPorts = grant.Ports
+				result.PortGroups = e.GetPortGroupsForGrant(ctx, grant, now)
 				rem := int(grant.ExpiresAt.Sub(now).Seconds())
 				if rem < 0 {
 					rem = 0
@@ -103,6 +105,7 @@ func (e *Engine) EvaluateVisitor(ctx context.Context, clientIP netip.Addr, token
 						result.HasActiveGrant = true
 						result.Grant = &g
 						result.AllowedPorts = g.Ports
+						result.PortGroups = e.GetPortGroupsForGrant(ctx, &g, now)
 						rem := int(g.ExpiresAt.Sub(now).Seconds())
 						if rem < 0 {
 							rem = 0
@@ -118,6 +121,7 @@ func (e *Engine) EvaluateVisitor(ctx context.Context, clientIP netip.Addr, token
 					result.HasActiveGrant = true
 					result.Grant = grant
 					result.AllowedPorts = grant.Ports
+					result.PortGroups = e.GetPortGroupsForGrant(ctx, grant, now)
 					result.RemainingSeconds = net.GrantDurationSeconds
 					_ = token
 				}
@@ -638,4 +642,78 @@ func (e *Engine) getMaxExtensions(ctx context.Context, grant *models.AccessGrant
 	}
 
 	return minLimit
+}
+
+// GetPortGroupsForGrant retrieves the active port groups associated with an access grant.
+func (e *Engine) GetPortGroupsForGrant(ctx context.Context, grant *models.AccessGrant, now time.Time) []models.PortGroup {
+	if grant == nil {
+		return nil
+	}
+
+	var pgs []models.PortGroup
+	seen := make(map[int64]bool)
+
+	// 1. If grant is tied to an access key, fetch port groups for that key
+	if grant.AccessKeyID != nil {
+		keyPGs, err := e.db.GetAccessKeyPortGroups(ctx, *grant.AccessKeyID)
+		if err == nil {
+			for _, pg := range keyPGs {
+				if pg.IsValidAt(now) && !seen[pg.ID] {
+					seen[pg.ID] = true
+					pgs = append(pgs, pg)
+				}
+			}
+		}
+	}
+
+	// 2. If grant is tied to an allowed network, fetch port groups for that network
+	if grant.AllowedNetworkID != nil {
+		netPGs, err := e.db.GetAllowedNetworkPortGroups(ctx, *grant.AllowedNetworkID)
+		if err == nil {
+			for _, pg := range netPGs {
+				if pg.IsValidAt(now) && !seen[pg.ID] {
+					seen[pg.ID] = true
+					pgs = append(pgs, pg)
+				}
+			}
+		}
+	}
+
+	// 3. If no port groups were found from key or network (e.g. global access key, admin grant, or direct ports),
+	// match against active global port groups or port groups whose ports intersect with grant.Ports
+	if len(pgs) == 0 {
+		allPGs, err := e.db.ListPortGroups(ctx)
+		if err == nil {
+			for _, pg := range allPGs {
+				if !pg.IsValidAt(now) || seen[pg.ID] {
+					continue
+				}
+				// If global mode, include it
+				if pg.AvailabilityMode == "global" {
+					seen[pg.ID] = true
+					pgs = append(pgs, pg)
+					continue
+				}
+				// Or if any ports match the grant ports
+				matched := false
+				for _, p := range pg.Ports {
+					for _, gp := range grant.Ports {
+						if p.Port == gp.Port && strings.EqualFold(p.Protocol, gp.Protocol) {
+							if !seen[pg.ID] {
+								seen[pg.ID] = true
+								pgs = append(pgs, pg)
+								matched = true
+							}
+							break
+						}
+					}
+					if matched {
+						break
+					}
+				}
+			}
+		}
+	}
+
+	return pgs
 }

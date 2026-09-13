@@ -78,7 +78,7 @@ func TestHealthEndpoint(t *testing.T) {
 
 	body := rec.Body.String()
 	if !strings.Contains(body, `"status":"ok"`) || !strings.Contains(body, `"database":"connected"`) ||
-		!strings.Contains(body, `"version":"0.3.1"`) || !strings.Contains(body, `"app":"Funnel by ExciteCreation"`) ||
+		!strings.Contains(body, `"version":"0.4.0"`) || !strings.Contains(body, `"app":"Funnel by ExciteCreation"`) ||
 		!strings.Contains(body, `"repository":"https://github.com/AhmadShamli/Funnel"`) {
 		t.Fatalf("unexpected health response: %s", body)
 	}
@@ -374,6 +374,7 @@ func TestAdminUpdateEntities(t *testing.T) {
 		"csrf_token":             {csrfToken},
 		"name":                   {"Updated PG"},
 		"description":            {"Updated Description"},
+		"custom_text":            {"[b]Important Guide[/b]\nVisit [url=https://vpn.example.com]VPN Portal[/url]"},
 		"availability_mode":      {"global"},
 		"grant_duration_seconds": {"7200"},
 		"allow_extend":           {"1"},
@@ -398,6 +399,9 @@ func TestAdminUpdateEntities(t *testing.T) {
 	}
 	if updatedPG.Name != "Updated PG" || updatedPG.GrantDurationSeconds != 7200 || !updatedPG.AllowExtend {
 		t.Errorf("port group fields not properly updated: %+v", updatedPG)
+	}
+	if updatedPG.CustomText != "[b]Important Guide[/b]\nVisit [url=https://vpn.example.com]VPN Portal[/url]" {
+		t.Errorf("expected updated custom_text, got %q", updatedPG.CustomText)
 	}
 	if len(updatedPG.Ports) != 2 {
 		t.Errorf("expected 2 updated ports, got %d", len(updatedPG.Ports))
@@ -627,6 +631,120 @@ func TestAdminOpenPortsPageAndCheck(t *testing.T) {
 	}
 	if revokedGrant.Status != "revoked" {
 		t.Errorf("expected status revoked, got %s", revokedGrant.Status)
+	}
+}
+
+func TestVisitorAccessViewPortGroupBBCode(t *testing.T) {
+	ctx := context.Background()
+	srv, db, _ := setupTestServer(t)
+	handler := srv.Handler()
+
+	// 1. Create PortGroup with custom text / BBCode
+	pg := &models.PortGroup{
+		Name:                 "Database Cluster",
+		Description:          "PostgreSQL ports",
+		CustomText:           "[b]Cluster Connection Instructions[/b]\nConnect via [code]psql -h db.example.local -p 5432[/code]\nSee [url=https://wiki.example.com/db]Database Guide[/url]",
+		AvailabilityMode:     "key_only",
+		AllowExtend:          true,
+		GrantDurationSeconds: 3600,
+		MaxDurationSeconds:   7200,
+		IsActive:             true,
+		Ports: []models.PortRule{
+			{Protocol: "tcp", Port: 5432},
+		},
+	}
+	if err := db.CreatePortGroup(ctx, pg); err != nil {
+		t.Fatalf("failed to create port group: %v", err)
+	}
+
+	// 2. Create Access Key
+	passHash := auth.HashAccessKey("test-secret-pepper", "dbpass123")
+	key := &models.AccessKey{
+		Name:         "DB Key",
+		PasswordHash: passHash,
+		IsActive:     true,
+		AllowExtend:  true,
+		PortGroupIDs: []int64{pg.ID},
+	}
+	if err := db.CreateAccessKey(ctx, key); err != nil {
+		t.Fatalf("failed to create access key: %v", err)
+	}
+
+	// 3. Visitor GET / for CSRF token
+	reqIndex := httptest.NewRequest("GET", "/", nil)
+	reqIndex.RemoteAddr = "198.51.100.42:12345"
+	recIndex := httptest.NewRecorder()
+	handler.ServeHTTP(recIndex, reqIndex)
+	if recIndex.Code != http.StatusOK {
+		t.Fatalf("expected 200 for index, got %d", recIndex.Code)
+	}
+	csrfToken := getCSRFTokenFromResponse(recIndex.Result())
+
+	// Visitor authenticates
+	authForm := url.Values{
+		"csrf_token": {csrfToken},
+		"password":   {"dbpass123"},
+	}
+	reqAuth := httptest.NewRequest("POST", "/access", strings.NewReader(authForm.Encode()))
+	reqAuth.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	reqAuth.RemoteAddr = "198.51.100.42:12345"
+	reqAuth.AddCookie(&http.Cookie{Name: "funnel_csrf", Value: csrfToken})
+	recAuth := httptest.NewRecorder()
+	handler.ServeHTTP(recAuth, reqAuth)
+
+	if recAuth.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 for auth, got %d", recAuth.Code)
+	}
+
+	var grantCookie *http.Cookie
+	for _, c := range recAuth.Result().Cookies() {
+		if c.Name == "funnel_grant" {
+			grantCookie = c
+			break
+		}
+	}
+	if grantCookie == nil {
+		t.Fatalf("expected funnel_grant cookie")
+	}
+
+	// 4. Visitor views /access/current
+	reqStatus := httptest.NewRequest("GET", "/access/current", nil)
+	reqStatus.RemoteAddr = "198.51.100.42:12345"
+	reqStatus.AddCookie(grantCookie)
+	recStatus := httptest.NewRecorder()
+	handler.ServeHTTP(recStatus, reqStatus)
+
+	if recStatus.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /access/current, got %d", recStatus.Code)
+	}
+
+	body := recStatus.Body.String()
+
+	// Verify elements are present
+	if !strings.Contains(body, "visitor-ports-list") {
+		t.Errorf("status page missing visitor-ports-list element")
+	}
+	if !strings.Contains(body, "port-group-notes-list") {
+		t.Errorf("status page missing port-group-notes-list element")
+	}
+	if !strings.Contains(body, "Database Cluster") {
+		t.Errorf("status page missing port group name 'Database Cluster'")
+	}
+	if !strings.Contains(body, "<strong>Cluster Connection Instructions</strong>") {
+		t.Errorf("status page missing rendered bold BBCode")
+	}
+	if !strings.Contains(body, `<pre class="bbcode-code"><code>psql -h db.example.local -p 5432</code></pre>`) {
+		t.Errorf("status page missing rendered code BBCode")
+	}
+	if !strings.Contains(body, `<a href="https://wiki.example.com/db" target="_blank" rel="noopener noreferrer">Database Guide</a>`) {
+		t.Errorf("status page missing rendered url BBCode")
+	}
+
+	// Verify order: port-group-notes-list appears after visitor-ports-list (below approved ports list)
+	portsIndex := strings.Index(body, "visitor-ports-list")
+	notesIndex := strings.Index(body, "port-group-notes-list")
+	if portsIndex == -1 || notesIndex == -1 || notesIndex < portsIndex {
+		t.Errorf("expected port-group-notes-list to appear below visitor-ports-list (portsIndex=%d, notesIndex=%d)", portsIndex, notesIndex)
 	}
 }
 

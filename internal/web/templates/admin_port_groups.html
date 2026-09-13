@@ -29,6 +29,7 @@
         <td>
           <strong>{{.Name}}</strong>
           {{if .Description}}<div style="font-size: 0.8rem; color: var(--text-secondary);">{{.Description}}</div>{{end}}
+          {{if .CustomText}}<div style="font-size: 0.75rem; color: #38bdf8; margin-top: 0.2rem;" title="Has access view notes configured">💬 Access View Notes</div>{{end}}
         </td>
         <td>
           <div class="flex-row" style="flex-wrap: wrap; gap: 0.25rem;">
@@ -92,7 +93,12 @@
 
       <div class="form-group">
         <label for="edit_group_desc_{{$pg.ID}}">Description</label>
-        <input type="text" id="edit_group_desc_{{$pg.ID}}" name="description" value="{{$pg.Description}}" placeholder="Optional description">
+        <input type="text" id="edit_group_desc_{{$pg.ID}}" name="description" value="{{$pg.Description}}" placeholder="Optional internal description">
+      </div>
+
+      <div class="form-group">
+        <label for="edit_group_custom_text_{{$pg.ID}}">Access View Text / BBCode</label>
+        <textarea id="edit_group_custom_text_{{$pg.ID}}" name="custom_text" rows="3" placeholder="Optional notes, connection instructions, or guidance shown below approved ports list on users access view (supports BBCode: [b], [i], [u], [url], [code], [quote], [color], [list])...">{{$pg.CustomText}}</textarea>
       </div>
 
       <div class="flex-row">
@@ -165,7 +171,12 @@
 
       <div class="form-group">
         <label for="group_desc">Description</label>
-        <input type="text" id="group_desc" name="description" placeholder="Optional description">
+        <input type="text" id="group_desc" name="description" placeholder="Optional internal description">
+      </div>
+
+      <div class="form-group">
+        <label for="group_custom_text">Access View Text / BBCode</label>
+        <textarea id="group_custom_text" name="custom_text" rows="3" placeholder="Optional notes, connection instructions, or guidance shown below approved ports list on users access view (supports BBCode: [b], [i], [u], [url], [code], [quote], [color], [list])..."></textarea>
       </div>
 
       <div class="flex-row">

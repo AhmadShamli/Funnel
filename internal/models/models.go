@@ -86,6 +86,7 @@ type PortGroup struct {
 	ID                   int64      `json:"id"`
 	Name                 string     `json:"name"`
 	Description          string     `json:"description"`
+	CustomText           string     `json:"custom_text,omitempty"`
 	AvailabilityMode     string     `json:"availability_mode"` // "global", "key_only", "always_allowed", "login_required"
 	AllowExtend          bool       `json:"allow_extend"`
 	MaxExtensions        *int       `json:"max_extensions"`
@@ -96,6 +97,11 @@ type PortGroup struct {
 	NetworkMatchMode     string     `json:"network_match_mode"` // "any", "all"
 	IsActive             bool       `json:"is_active"`
 	Ports                []PortRule `json:"ports"`
+}
+
+// BBCode returns the custom text / BBCode for this port group.
+func (pg *PortGroup) BBCode() string {
+	return pg.CustomText
 }
 
 // IsValidAt checks if the port group is valid at the given time.

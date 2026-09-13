@@ -48,6 +48,7 @@ func TestDatabaseCRUD(t *testing.T) {
 	pg := &models.PortGroup{
 		Name:                 "SSH & Web",
 		Description:          "Standard ports",
+		CustomText:           "[b]Welcome to SSH & Web[/b]\nConnect via [url=https://example.com]Example[/url]",
 		AvailabilityMode:     "key_only",
 		AllowExtend:          true,
 		GrantDurationSeconds: 3600,
@@ -72,6 +73,22 @@ func TestDatabaseCRUD(t *testing.T) {
 	}
 	if len(fetchedPG.Ports) != 3 {
 		t.Fatalf("expected 3 ports, got %d", len(fetchedPG.Ports))
+	}
+	if fetchedPG.CustomText != pg.CustomText {
+		t.Fatalf("expected CustomText %q, got %q", pg.CustomText, fetchedPG.CustomText)
+	}
+
+	// Test updating PortGroup with new custom text
+	pg.CustomText = "Updated custom text [code]ssh root@host[/code]"
+	if err := db.UpdatePortGroup(ctx, pg); err != nil {
+		t.Fatalf("UpdatePortGroup failed: %v", err)
+	}
+	updatedPG, err := db.GetPortGroupByID(ctx, pg.ID)
+	if err != nil {
+		t.Fatalf("GetPortGroupByID failed after update: %v", err)
+	}
+	if updatedPG.CustomText != pg.CustomText {
+		t.Fatalf("expected updated CustomText %q, got %q", pg.CustomText, updatedPG.CustomText)
 	}
 
 	// 3. Access Keys

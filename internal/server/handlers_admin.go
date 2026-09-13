@@ -436,6 +436,13 @@ func (h *AdminHandlers) HandlePortGroupsGet(w http.ResponseWriter, r *http.Reque
 func (h *AdminHandlers) HandlePortGroupsPost(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.FormValue("name"))
 	desc := strings.TrimSpace(r.FormValue("description"))
+	customText := strings.TrimSpace(r.FormValue("custom_text"))
+	if customText == "" {
+		customText = strings.TrimSpace(r.FormValue("bbcode"))
+	}
+	if customText == "" {
+		customText = strings.TrimSpace(r.FormValue("text"))
+	}
 	availMode := r.FormValue("availability_mode")
 	duration, _ := strconv.Atoi(r.FormValue("grant_duration_seconds"))
 	if duration <= 0 {
@@ -469,6 +476,7 @@ func (h *AdminHandlers) HandlePortGroupsPost(w http.ResponseWriter, r *http.Requ
 	pg := &models.PortGroup{
 		Name:                 name,
 		Description:          desc,
+		CustomText:           customText,
 		AvailabilityMode:     availMode,
 		AllowExtend:          allowExtend,
 		MaxExtensions:        maxExt,
@@ -515,6 +523,16 @@ func (h *AdminHandlers) HandlePortGroupsUpdate(w http.ResponseWriter, r *http.Re
 	}
 	pg.Name = name
 	pg.Description = strings.TrimSpace(r.FormValue("description"))
+
+	customText := strings.TrimSpace(r.FormValue("custom_text"))
+	if customText == "" {
+		customText = strings.TrimSpace(r.FormValue("bbcode"))
+	}
+	if customText == "" {
+		customText = strings.TrimSpace(r.FormValue("text"))
+	}
+	pg.CustomText = customText
+
 	pg.AvailabilityMode = r.FormValue("availability_mode")
 
 	duration, _ := strconv.Atoi(r.FormValue("grant_duration_seconds"))

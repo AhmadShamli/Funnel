@@ -59,6 +59,23 @@
       </div>
     </div>
 
+    {{if .PortGroups}}
+    <div class="port-group-notes-list" id="port-group-notes-list">
+      {{range .PortGroups}}
+        {{if .CustomText}}
+        <div class="port-group-note-card">
+          <div class="port-group-note-header">
+            <span class="port-group-note-title">📌 {{.Name}}</span>
+          </div>
+          <div class="bbcode-content">
+            {{renderBBCode .CustomText}}
+          </div>
+        </div>
+        {{end}}
+      {{end}}
+    </div>
+    {{end}}
+
     <div class="flex-row" style="margin-top: 2rem;">
       {{if .CanExtend}}
       <button type="button" class="btn btn-primary" style="flex: 1;" data-modal-open="extend-modal">
