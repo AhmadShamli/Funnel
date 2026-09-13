@@ -316,6 +316,17 @@ input:focus, select:focus, textarea:focus {
   font-weight: 600;
 }
 
+.ports-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.ports-header label {
+  margin-bottom: 0;
+}
+
 .port-check-controls {
   display: flex;
   align-items: center;
@@ -894,6 +905,20 @@ tr:hover td {
 
   .countdown-label {
     font-size: 0.775rem;
+  }
+
+  /* Approved ports header: label and controls on separate rows on mobile */
+  .ports-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .ports-header .port-check-controls {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: wrap;
   }
 }
 
