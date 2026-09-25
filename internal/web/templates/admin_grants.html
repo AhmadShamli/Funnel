@@ -39,8 +39,8 @@
         </td>
         <td>
           <div class="flex-row" style="flex-wrap: wrap; gap: 0.25rem;">
-            {{range .Ports}}
-            <span class="port-badge" style="font-size: 0.75rem;">{{.Port}}/{{.Protocol}}</span>
+            {{range .PortEntries}}
+            <span class="port-badge" style="font-size: 0.75rem;">{{.String}}</span>
             {{end}}
           </div>
         </td>

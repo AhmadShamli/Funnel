@@ -70,6 +70,24 @@ func TestEmbeddedTemplates(t *testing.T) {
 				t.Errorf("admin_keys key_password input missing autocomplete=\"new-password\"")
 			}
 		}
+		if name == "admin_port_groups" {
+			if !strings.Contains(body, "+ Add Port Range") {
+				t.Errorf("admin_port_groups missing '+ Add Port Range' button")
+			}
+			if !strings.Contains(body, "addPortRangeRow") {
+				t.Errorf("admin_port_groups missing addPortRangeRow handler")
+			}
+		}
+	}
+
+	// Verify static JavaScript contains port range helper
+	jsData, err := EmbeddedFS.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded app.js: %v", err)
+	}
+	jsStr := string(jsData)
+	if !strings.Contains(jsStr, "function addPortRangeRow") {
+		t.Errorf("app.js missing addPortRangeRow function")
 	}
 
 	// Verify static CSS contains responsive rules for mobile view

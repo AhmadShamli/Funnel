@@ -33,8 +33,8 @@
         </td>
         <td>
           <div class="flex-row" style="flex-wrap: wrap; gap: 0.25rem;">
-            {{range .Ports}}
-            <span class="port-badge" style="font-size: 0.75rem;">{{.Port}}/{{.Protocol}}</span>
+            {{range .PortEntries}}
+            <span class="port-badge" style="font-size: 0.75rem;">{{.String}}</span>
             {{else}}
             <span style="color: var(--text-muted); font-size: 0.8rem;">No ports configured</span>
             {{end}}
@@ -118,18 +118,34 @@
       <div class="form-group">
         <label>Configured Ports (TCP / UDP)</label>
         <div id="ports-container-{{$pg.ID}}">
-          {{range $pg.Ports}}
+          {{range $entry := $pg.PortEntries}}
+          {{if $entry.IsRange}}
+          <div class="flex-row form-group port-row port-range-row" style="align-items: center; gap: 0.5rem;">
+            <select name="port_range_protocol[]" style="width: 110px;">
+              <option value="tcp" {{if eq $entry.Protocol "tcp"}}selected{{end}}>TCP</option>
+              <option value="udp" {{if eq $entry.Protocol "udp"}}selected{{end}}>UDP</option>
+            </select>
+            <input type="number" name="port_range_start[]" min="1" max="65535" value="{{$entry.StartPort}}" placeholder="From (e.g. 8000)" required style="flex: 1;">
+            <span style="color: var(--text-secondary); font-weight: bold;">&ndash;</span>
+            <input type="number" name="port_range_end[]" min="1" max="65535" value="{{$entry.EndPort}}" placeholder="To (e.g. 8010)" required style="flex: 1;">
+            <button type="button" class="btn btn-danger btn-sm" onclick="this.closest('.port-row').remove()">✕</button>
+          </div>
+          {{else}}
           <div class="flex-row form-group port-row">
             <select name="port_protocol[]" style="width: 110px;">
-              <option value="tcp" {{if eq .Protocol "tcp"}}selected{{end}}>TCP</option>
-              <option value="udp" {{if eq .Protocol "udp"}}selected{{end}}>UDP</option>
+              <option value="tcp" {{if eq $entry.Protocol "tcp"}}selected{{end}}>TCP</option>
+              <option value="udp" {{if eq $entry.Protocol "udp"}}selected{{end}}>UDP</option>
             </select>
-            <input type="number" name="port_number[]" min="1" max="65535" value="{{.Port}}" placeholder="Port (e.g. 22)" required style="flex: 1;">
+            <input type="text" name="port_number[]" value="{{$entry.StartPort}}" placeholder="Port (e.g. 22 or 8000-8010)" required style="flex: 1;">
             <button type="button" class="btn btn-danger btn-sm" onclick="this.closest('.port-row').remove()">✕</button>
           </div>
           {{end}}
+          {{end}}
         </div>
-        <button type="button" class="btn btn-secondary btn-sm" onclick="addPortRow('ports-container-{{$pg.ID}}')">+ Add Port</button>
+        <div class="flex-row" style="gap: 0.5rem; margin-top: 0.5rem;">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="addPortRow('ports-container-{{$pg.ID}}')">+ Add Port</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="addPortRangeRow('ports-container-{{$pg.ID}}')">+ Add Port Range</button>
+        </div>
       </div>
 
       <div class="flex-row">
@@ -201,11 +217,14 @@
               <option value="tcp" selected>TCP</option>
               <option value="udp">UDP</option>
             </select>
-            <input type="number" name="port_number[]" min="1" max="65535" placeholder="Port (e.g. 22)" required style="flex: 1;">
+            <input type="text" name="port_number[]" placeholder="Port (e.g. 22 or 8000-8010)" required style="flex: 1;">
             <button type="button" class="btn btn-danger btn-sm" onclick="this.closest('.port-row').remove()">✕</button>
           </div>
         </div>
-        <button type="button" class="btn btn-secondary btn-sm" onclick="addPortRow('ports-container')">+ Add Port</button>
+        <div class="flex-row" style="gap: 0.5rem; margin-top: 0.5rem;">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="addPortRow('ports-container')">+ Add Port</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="addPortRangeRow('ports-container')">+ Add Port Range</button>
+        </div>
       </div>
 
       <div class="flex-row">

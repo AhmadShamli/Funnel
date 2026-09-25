@@ -153,7 +153,29 @@ function addPortRow(containerId) {
       <option value="tcp" selected>TCP</option>
       <option value="udp">UDP</option>
     </select>
-    <input type="number" name="port_number[]" min="1" max="65535" placeholder="Port (e.g. 22)" required style="flex: 1;">
+    <input type="text" name="port_number[]" placeholder="Port (e.g. 22 or 8000-8010)" required style="flex: 1;">
+    <button type="button" class="btn btn-danger btn-sm" onclick="this.closest('.port-row').remove()">✕</button>
+  `;
+  container.appendChild(row);
+}
+
+// Dynamic Port Range Adder in Admin Forms
+function addPortRangeRow(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  const row = document.createElement('div');
+  row.className = 'flex-row form-group port-row port-range-row';
+  row.style.alignItems = 'center';
+  row.style.gap = '0.5rem';
+  row.innerHTML = `
+    <select name="port_range_protocol[]" style="width: 110px;">
+      <option value="tcp" selected>TCP</option>
+      <option value="udp">UDP</option>
+    </select>
+    <input type="number" name="port_range_start[]" min="1" max="65535" placeholder="From (e.g. 8000)" required style="flex: 1;">
+    <span style="color: var(--text-secondary); font-weight: bold;">&ndash;</span>
+    <input type="number" name="port_range_end[]" min="1" max="65535" placeholder="To (e.g. 8010)" required style="flex: 1;">
     <button type="button" class="btn btn-danger btn-sm" onclick="this.closest('.port-row').remove()">✕</button>
   `;
   container.appendChild(row);

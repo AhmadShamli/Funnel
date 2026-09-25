@@ -748,3 +748,233 @@ func TestVisitorAccessViewPortGroupBBCode(t *testing.T) {
 	}
 }
 
+func TestPortRangeCreationAndUpdate(t *testing.T) {
+	srv, db, _ := setupTestServer(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	// 1. Create admin user and session
+	adminUser := &models.AdminUser{
+		Username:     "rangeadmin",
+		PasswordHash: "dummyhash",
+		Role:         "admin",
+		IsActive:     true,
+		CreatedAt:    time.Now().UTC(),
+	}
+	if err := db.CreateAdminUser(ctx, adminUser); err != nil {
+		t.Fatalf("failed to create admin: %v", err)
+	}
+
+	rawToken, _ := auth.GenerateRandomToken(32)
+	tokenHash := auth.HashToken(rawToken)
+	session := &models.AdminSession{
+		AdminUserID:      adminUser.ID,
+		SessionTokenHash: tokenHash,
+		UserAgent:        "TestAgent",
+		ClientIP:         "127.0.0.1",
+		CreatedAt:        time.Now().UTC(),
+		LastActivityAt:   time.Now().UTC(),
+		ExpiresAt:        time.Now().UTC().Add(24 * time.Hour),
+	}
+	if err := db.CreateAdminSession(ctx, session); err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+
+	sessionCookie := &http.Cookie{Name: "funnel_admin_session", Value: rawToken}
+	csrfToken := "valid-csrf-token"
+	csrfCookie := &http.Cookie{Name: "funnel_csrf", Value: csrfToken}
+	handler := srv.Handler()
+
+	// 2. POST /admin/port-groups with single port and multiple port ranges (TCP and UDP)
+	createForm := url.Values{
+		"csrf_token":             {csrfToken},
+		"name":                   {"Range Service Stack"},
+		"description":            {"Web and Media Services"},
+		"availability_mode":      {"key_only"},
+		"grant_duration_seconds": {"3600"},
+		"allow_extend":           {"1"},
+		"port_protocol[]":        {"tcp"},
+		"port_number[]":          {"80"},
+		"port_range_protocol[]":  {"tcp", "udp"},
+		"port_range_start[]":     {"8000", "5000"},
+		"port_range_end[]":       {"8005", "5002"},
+	}
+
+	reqCreate := httptest.NewRequest("POST", "/admin/port-groups", strings.NewReader(createForm.Encode()))
+	reqCreate.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	reqCreate.AddCookie(sessionCookie)
+	reqCreate.AddCookie(csrfCookie)
+	recCreate := httptest.NewRecorder()
+	handler.ServeHTTP(recCreate, reqCreate)
+
+	if recCreate.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 redirect on port group create, got %d", recCreate.Code)
+	}
+
+	groups, err := db.ListPortGroups(ctx)
+	if err != nil {
+		t.Fatalf("failed to list port groups: %v", err)
+	}
+	var createdPG *models.PortGroup
+	for i := range groups {
+		if groups[i].Name == "Range Service Stack" {
+			createdPG = &groups[i]
+			break
+		}
+	}
+	if createdPG == nil {
+		t.Fatalf("created port group not found in DB")
+	}
+
+	// 80/tcp (1) + 8000-8005/tcp (6) + 5000-5002/udp (3) = 10 ports
+	if len(createdPG.Ports) != 10 {
+		t.Fatalf("expected 10 ports in port group, got %d: %+v", len(createdPG.Ports), createdPG.Ports)
+	}
+
+	// Verify PortEntries grouping
+	entries := createdPG.PortEntries()
+	expectedEntries := []string{"80/tcp", "8000-8005/tcp", "5000-5002/udp"}
+	if len(entries) != len(expectedEntries) {
+		t.Fatalf("expected %d port entries, got %d: %+v", len(expectedEntries), len(entries), entries)
+	}
+	for i, exp := range expectedEntries {
+		if entries[i].String() != exp {
+			t.Errorf("entry %d: expected %s, got %s", i, exp, entries[i].String())
+		}
+	}
+
+	// 3. Test Updating with range entered directly in port_number[] and inverted range in port_range
+	updateForm := url.Values{
+		"csrf_token":             {csrfToken},
+		"name":                   {"Updated Range Stack"},
+		"description":            {"Updated desc"},
+		"availability_mode":      {"global"},
+		"grant_duration_seconds": {"1800"},
+		"allow_extend":           {"1"},
+		"port_protocol[]":        {"tcp"},
+		"port_number[]":          {"9000-9002"},
+		"port_range_protocol[]":  {"udp"},
+		"port_range_start[]":     {"6003"}, // inverted: start 6003 > end 6000
+		"port_range_end[]":       {"6000"},
+	}
+
+	reqUpdate := httptest.NewRequest("POST", fmt.Sprintf("/admin/port-groups/%d", createdPG.ID), strings.NewReader(updateForm.Encode()))
+	reqUpdate.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	reqUpdate.AddCookie(sessionCookie)
+	reqUpdate.AddCookie(csrfCookie)
+	recUpdate := httptest.NewRecorder()
+	handler.ServeHTTP(recUpdate, reqUpdate)
+
+	if recUpdate.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 redirect on port group update, got %d", recUpdate.Code)
+	}
+
+	updatedPG, err := db.GetPortGroupByID(ctx, createdPG.ID)
+	if err != nil {
+		t.Fatalf("failed to get updated port group: %v", err)
+	}
+	// 9000-9002 tcp (3) + 6000-6003 udp (4) = 7 ports
+	if len(updatedPG.Ports) != 7 {
+		t.Fatalf("expected 7 ports after update, got %d: %+v", len(updatedPG.Ports), updatedPG.Ports)
+	}
+
+	updatedEntries := updatedPG.PortEntries()
+	expectedUpdatedEntries := []string{"9000-9002/tcp", "6000-6003/udp"}
+	if len(updatedEntries) != len(expectedUpdatedEntries) {
+		t.Fatalf("expected %d updated port entries, got %d: %+v", len(expectedUpdatedEntries), len(updatedEntries), updatedEntries)
+	}
+	for i, exp := range expectedUpdatedEntries {
+		if updatedEntries[i].String() != exp {
+			t.Errorf("updated entry %d: expected %s, got %s", i, exp, updatedEntries[i].String())
+		}
+	}
+
+	// 4. Test validation error when port range exceeds max allowed span
+	invalidForm := url.Values{
+		"csrf_token":             {csrfToken},
+		"name":                   {"Oversized Range Stack"},
+		"availability_mode":      {"key_only"},
+		"grant_duration_seconds": {"3600"},
+		"port_range_protocol[]":  {"tcp"},
+		"port_range_start[]":     {"1"},
+		"port_range_end[]":       {"2000"}, // 2000 ports > 1000 limit
+	}
+
+	reqInvalid := httptest.NewRequest("POST", "/admin/port-groups", strings.NewReader(invalidForm.Encode()))
+	reqInvalid.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	reqInvalid.AddCookie(sessionCookie)
+	reqInvalid.AddCookie(csrfCookie)
+	recInvalid := httptest.NewRecorder()
+	handler.ServeHTTP(recInvalid, reqInvalid)
+
+	if recInvalid.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 redirect with error, got %d", recInvalid.Code)
+	}
+	loc := recInvalid.Header().Get("Location")
+	if !strings.Contains(loc, "error=") {
+		t.Errorf("expected error in redirect Location, got %s", loc)
+	}
+}
+
+func TestOpenPortsCheckWithPortRange(t *testing.T) {
+	srv, db, _ := setupTestServer(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	adminUser := &models.AdminUser{
+		Username:     "opadmin",
+		PasswordHash: "dummyhash",
+		Role:         "admin",
+		IsActive:     true,
+		CreatedAt:    time.Now().UTC(),
+	}
+	_ = db.CreateAdminUser(ctx, adminUser)
+
+	rawToken, _ := auth.GenerateRandomToken(32)
+	tokenHash := auth.HashToken(rawToken)
+	session := &models.AdminSession{
+		AdminUserID:      adminUser.ID,
+		SessionTokenHash: tokenHash,
+		UserAgent:        "TestAgent",
+		ClientIP:         "127.0.0.1",
+		CreatedAt:        time.Now().UTC(),
+		LastActivityAt:   time.Now().UTC(),
+		ExpiresAt:        time.Now().UTC().Add(24 * time.Hour),
+	}
+	_ = db.CreateAdminSession(ctx, session)
+
+	sessionCookie := &http.Cookie{Name: "funnel_admin_session", Value: rawToken}
+	handler := srv.Handler()
+
+	// Query open ports check with range: ports=8000-8002/tcp
+	req := httptest.NewRequest("GET", "/admin/open-ports/check?ports=8000-8002/tcp", nil)
+	req.AddCookie(sessionCookie)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Timestamp string `json:"timestamp"`
+		Ports     []struct {
+			Port     int    `json:"port"`
+			Protocol string `json:"protocol"`
+		} `json:"ports"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(resp.Ports) != 3 {
+		t.Fatalf("expected 3 ports checked, got %d: %+v", len(resp.Ports), resp.Ports)
+	}
+	expectedPorts := []int{8000, 8001, 8002}
+	for i, exp := range expectedPorts {
+		if resp.Ports[i].Port != exp || resp.Ports[i].Protocol != "tcp" {
+			t.Errorf("port %d: expected %d/tcp, got %d/%s", i, exp, resp.Ports[i].Port, resp.Ports[i].Protocol)
+		}
+	}
+}
+

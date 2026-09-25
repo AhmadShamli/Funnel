@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"net/netip"
+	"sort"
 	"strings"
 	"time"
 )
@@ -81,6 +82,86 @@ func (p PortRule) String() string {
 	return fmt.Sprintf("%d/%s", p.Port, strings.ToLower(p.Protocol))
 }
 
+// PortEntry represents either a single port or a port range for display and configuration.
+type PortEntry struct {
+	Protocol  string `json:"protocol"`
+	StartPort int    `json:"start_port"`
+	EndPort   int    `json:"end_port"`
+	IsRange   bool   `json:"is_range"`
+}
+
+func (pe PortEntry) String() string {
+	if pe.IsRange && pe.StartPort != pe.EndPort {
+		return fmt.Sprintf("%d-%d/%s", pe.StartPort, pe.EndPort, strings.ToLower(pe.Protocol))
+	}
+	return fmt.Sprintf("%d/%s", pe.StartPort, strings.ToLower(pe.Protocol))
+}
+
+// GroupPortsIntoEntries groups a slice of PortRule into contiguous PortEntry items.
+func GroupPortsIntoEntries(ports []PortRule) []PortEntry {
+	if len(ports) == 0 {
+		return nil
+	}
+
+	byProto := make(map[string][]int)
+	for _, p := range ports {
+		proto := strings.ToLower(strings.TrimSpace(p.Protocol))
+		if proto == "" {
+			proto = "tcp"
+		}
+		byProto[proto] = append(byProto[proto], p.Port)
+	}
+
+	protoOrder := []string{"tcp", "udp"}
+	for proto := range byProto {
+		if proto != "tcp" && proto != "udp" {
+			protoOrder = append(protoOrder, proto)
+		}
+	}
+
+	var entries []PortEntry
+	for _, proto := range protoOrder {
+		portList, exists := byProto[proto]
+		if !exists || len(portList) == 0 {
+			continue
+		}
+
+		sort.Ints(portList)
+		var uniquePorts []int
+		for i, port := range portList {
+			if i == 0 || port != portList[i-1] {
+				uniquePorts = append(uniquePorts, port)
+			}
+		}
+
+		start := uniquePorts[0]
+		prev := start
+		for i := 1; i < len(uniquePorts); i++ {
+			curr := uniquePorts[i]
+			if curr == prev+1 {
+				prev = curr
+			} else {
+				entries = append(entries, PortEntry{
+					Protocol:  proto,
+					StartPort: start,
+					EndPort:   prev,
+					IsRange:   start != prev,
+				})
+				start = curr
+				prev = curr
+			}
+		}
+		entries = append(entries, PortEntry{
+			Protocol:  proto,
+			StartPort: start,
+			EndPort:   prev,
+			IsRange:   start != prev,
+		})
+	}
+
+	return entries
+}
+
 // PortGroup represents a collection of ports with availability and duration rules.
 type PortGroup struct {
 	ID                   int64      `json:"id"`
@@ -97,6 +178,11 @@ type PortGroup struct {
 	NetworkMatchMode     string     `json:"network_match_mode"` // "any", "all"
 	IsActive             bool       `json:"is_active"`
 	Ports                []PortRule `json:"ports"`
+}
+
+// PortEntries returns ports grouped into single ports and contiguous port ranges.
+func (pg *PortGroup) PortEntries() []PortEntry {
+	return GroupPortsIntoEntries(pg.Ports)
 }
 
 // BBCode returns the custom text / BBCode for this port group.
@@ -223,6 +309,11 @@ type AccessGrant struct {
 // IsActiveAt checks if grant is active and not expired at the given time.
 func (g *AccessGrant) IsActiveAt(now time.Time) bool {
 	return g.Status == "active" && g.ExpiresAt.After(now)
+}
+
+// PortEntries returns ports grouped into single ports and contiguous port ranges.
+func (g *AccessGrant) PortEntries() []PortEntry {
+	return GroupPortsIntoEntries(g.Ports)
 }
 
 // AuditEvent represents a logged operational or security event.

@@ -72,8 +72,10 @@ func GetProbeCandidates(reqHost string, cfg *config.Config) []string {
 	if reqHost != "" {
 		host, _, err := net.SplitHostPort(reqHost)
 		if err == nil && host != "" {
-			addCandidate(host)
-		} else if reqHost != "" {
+			if host != "example.com" {
+				addCandidate(host)
+			}
+		} else if reqHost != "" && reqHost != "example.com" {
 			addCandidate(reqHost)
 		}
 	}
@@ -126,6 +128,7 @@ func testSinglePort(ctx context.Context, rule models.PortRule, candidates []stri
 
 	// TCP testing: actively probe candidates
 	var lastErr error
+	var hadRefused bool
 	for _, cand := range candidates {
 		addr := net.JoinHostPort(cand, strconv.Itoa(rule.Port))
 		start := time.Now()
@@ -141,10 +144,11 @@ func testSinglePort(ctx context.Context, rule models.PortRule, candidates []stri
 		}
 		lastErr = err
 
-		// If local loopback explicitly refused the connection, check if any other candidate is non-loopback
-		// If only loopbacks remain, no need to retry identical loopbacks
-		if strings.Contains(err.Error(), "refused") && (cand == "127.0.0.1" || cand == "::1") {
-			continue
+		if strings.Contains(err.Error(), "refused") {
+			hadRefused = true
+			if cand == "127.0.0.1" || cand == "::1" {
+				continue
+			}
 		}
 	}
 
@@ -157,7 +161,10 @@ func testSinglePort(ctx context.Context, rule models.PortRule, candidates []stri
 		return status
 	}
 
-	if lastErr != nil {
+	if hadRefused {
+		status.Status = "closed"
+		status.Message = "Connection refused (no service listening)"
+	} else if lastErr != nil {
 		if errors.Is(lastErr, context.DeadlineExceeded) || strings.Contains(lastErr.Error(), "timeout") {
 			status.Status = "unreachable"
 			status.Message = "Connection timed out"

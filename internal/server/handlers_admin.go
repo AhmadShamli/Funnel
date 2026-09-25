@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -457,20 +458,10 @@ func (h *AdminHandlers) HandlePortGroupsPost(w http.ResponseWriter, r *http.Requ
 	}
 	allowExtend := r.FormValue("allow_extend") == "1"
 
-	_ = r.ParseForm()
-	protocols := r.Form["port_protocol[]"]
-	ports := r.Form["port_number[]"]
-
-	var portRules []models.PortRule
-	for i := 0; i < len(ports); i++ {
-		pNum, err := strconv.Atoi(ports[i])
-		if err == nil && pNum >= 1 && pNum <= 65535 {
-			proto := "tcp"
-			if i < len(protocols) && strings.ToLower(protocols[i]) == "udp" {
-				proto = "udp"
-			}
-			portRules = append(portRules, models.PortRule{Protocol: proto, Port: pNum})
-		}
+	portRules, err := parsePortRulesFromRequest(r)
+	if err != nil {
+		http.Redirect(w, r, "/admin/port-groups?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
 	}
 
 	pg := &models.PortGroup{
@@ -551,20 +542,10 @@ func (h *AdminHandlers) HandlePortGroupsUpdate(w http.ResponseWriter, r *http.Re
 	pg.MaxExtensions = maxExt
 	pg.AllowExtend = r.FormValue("allow_extend") == "1"
 
-	_ = r.ParseForm()
-	protocols := r.Form["port_protocol[]"]
-	ports := r.Form["port_number[]"]
-
-	var portRules []models.PortRule
-	for i := 0; i < len(ports); i++ {
-		pNum, err := strconv.Atoi(ports[i])
-		if err == nil && pNum >= 1 && pNum <= 65535 {
-			proto := "tcp"
-			if i < len(protocols) && strings.ToLower(protocols[i]) == "udp" {
-				proto = "udp"
-			}
-			portRules = append(portRules, models.PortRule{Protocol: proto, Port: pNum})
-		}
+	portRules, err := parsePortRulesFromRequest(r)
+	if err != nil {
+		http.Redirect(w, r, "/admin/port-groups?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
 	}
 	pg.Ports = portRules
 
@@ -582,6 +563,130 @@ func (h *AdminHandlers) HandlePortGroupsUpdate(w http.ResponseWriter, r *http.Re
 	})
 
 	http.Redirect(w, r, "/admin/port-groups?success=Port+group+updated", http.StatusSeeOther)
+}
+
+// parsePortRulesFromRequest extracts and expands both single ports and port ranges from submitted form data.
+func parsePortRulesFromRequest(r *http.Request) ([]models.PortRule, error) {
+	_ = r.ParseForm()
+	protocols := r.Form["port_protocol[]"]
+	ports := r.Form["port_number[]"]
+
+	rangeProtocols := r.Form["port_range_protocol[]"]
+	rangeStarts := r.Form["port_range_start[]"]
+	rangeEnds := r.Form["port_range_end[]"]
+
+	seen := make(map[string]bool)
+	var portRules []models.PortRule
+
+	addRule := func(proto string, port int) {
+		proto = strings.ToLower(strings.TrimSpace(proto))
+		if proto != "udp" {
+			proto = "tcp"
+		}
+		key := fmt.Sprintf("%s/%d", proto, port)
+		if !seen[key] && port >= 1 && port <= 65535 {
+			seen[key] = true
+			portRules = append(portRules, models.PortRule{Protocol: proto, Port: port})
+		}
+	}
+
+	// 1. Process port_number[] entries (supports single "80", ranges "8000-8010", "8000:8010", or comma-separated)
+	for i := 0; i < len(ports); i++ {
+		raw := strings.TrimSpace(ports[i])
+		if raw == "" {
+			continue
+		}
+		proto := "tcp"
+		if i < len(protocols) && strings.ToLower(strings.TrimSpace(protocols[i])) == "udp" {
+			proto = "udp"
+		}
+
+		for _, token := range strings.Split(raw, ",") {
+			token = strings.TrimSpace(token)
+			if token == "" {
+				continue
+			}
+
+			// Check if token contains a range separator (- or :)
+			if strings.Contains(token, "-") || strings.Contains(token, ":") {
+				parts := strings.FieldsFunc(token, func(r rune) bool {
+					return r == '-' || r == ':'
+				})
+				if len(parts) == 2 {
+					start, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+					end, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+					if err1 != nil || err2 != nil || start < 1 || start > 65535 || end < 1 || end > 65535 {
+						return nil, fmt.Errorf("invalid port range %q: ports must be between 1 and 65535", token)
+					}
+					if start > end {
+						start, end = end, start
+					}
+					if end-start+1 > 1000 {
+						return nil, fmt.Errorf("port range %q exceeds maximum allowed span of 1000 ports", token)
+					}
+					for p := start; p <= end; p++ {
+						addRule(proto, p)
+					}
+				} else {
+					return nil, fmt.Errorf("invalid port range format %q", token)
+				}
+			} else {
+				pNum, err := strconv.Atoi(token)
+				if err != nil || pNum < 1 || pNum > 65535 {
+					return nil, fmt.Errorf("invalid port number %q: must be between 1 and 65535", token)
+				}
+				addRule(proto, pNum)
+			}
+		}
+	}
+
+	// 2. Process dedicated port range inputs (port_range_start[] and port_range_end[])
+	for i := 0; i < len(rangeStarts); i++ {
+		startStr := strings.TrimSpace(rangeStarts[i])
+		var endStr string
+		if i < len(rangeEnds) {
+			endStr = strings.TrimSpace(rangeEnds[i])
+		}
+		if startStr == "" && endStr == "" {
+			continue
+		}
+		if startStr == "" {
+			startStr = endStr
+		}
+		if endStr == "" {
+			endStr = startStr
+		}
+
+		proto := "tcp"
+		if i < len(rangeProtocols) && strings.ToLower(strings.TrimSpace(rangeProtocols[i])) == "udp" {
+			proto = "udp"
+		}
+
+		start, err1 := strconv.Atoi(startStr)
+		end, err2 := strconv.Atoi(endStr)
+		if err1 != nil || err2 != nil || start < 1 || start > 65535 || end < 1 || end > 65535 {
+			return nil, fmt.Errorf("invalid port range %s-%s: ports must be between 1 and 65535", startStr, endStr)
+		}
+		if start > end {
+			start, end = end, start
+		}
+		if end-start+1 > 1000 {
+			return nil, fmt.Errorf("port range %d-%d exceeds maximum allowed span of 1000 ports", start, end)
+		}
+		for p := start; p <= end; p++ {
+			addRule(proto, p)
+		}
+	}
+
+	// Deterministic sort: protocol ("tcp" then "udp"), then port ASC
+	sort.Slice(portRules, func(i, j int) bool {
+		if portRules[i].Protocol != portRules[j].Protocol {
+			return portRules[i].Protocol < portRules[j].Protocol
+		}
+		return portRules[i].Port < portRules[j].Port
+	})
+
+	return portRules, nil
 }
 
 // --- Allowed Networks ---
@@ -875,23 +980,36 @@ func (h *AdminHandlers) HandleOpenPortsCheck(w http.ResponseWriter, r *http.Requ
 			if part == "" {
 				continue
 			}
-			var portNum int
 			var proto string = "tcp"
+			portPart := part
 			if strings.Contains(part, "/") {
 				sub := strings.SplitN(part, "/", 2)
-				p, err := strconv.Atoi(sub[0])
-				if err == nil {
-					portNum = p
-					proto = sub[1]
+				portPart = sub[0]
+				proto = sub[1]
+			}
+			if strings.Contains(portPart, "-") || strings.Contains(portPart, ":") {
+				rangeTokens := strings.FieldsFunc(portPart, func(r rune) bool {
+					return r == '-' || r == ':'
+				})
+				if len(rangeTokens) == 2 {
+					s, err1 := strconv.Atoi(strings.TrimSpace(rangeTokens[0]))
+					e, err2 := strconv.Atoi(strings.TrimSpace(rangeTokens[1]))
+					if err1 == nil && err2 == nil && s >= 1 && s <= 65535 && e >= 1 && e <= 65535 {
+						if s > e {
+							s, e = e, s
+						}
+						if e-s+1 <= 1000 {
+							for p := s; p <= e; p++ {
+								addPort(p, proto)
+							}
+						}
+					}
 				}
 			} else {
-				p, err := strconv.Atoi(part)
-				if err == nil {
-					portNum = p
+				p, err := strconv.Atoi(portPart)
+				if err == nil && p > 0 {
+					addPort(p, proto)
 				}
-			}
-			if portNum > 0 {
-				addPort(portNum, proto)
 			}
 		}
 	}
