@@ -5,7 +5,7 @@ set -euo pipefail
 # Supported: Debian/Ubuntu, RHEL/Rocky/Fedora, Arch Linux, Alpine
 
 REPO="AhmadShamli/Funnel"
-DEFAULT_FALLBACK_TAG="v0.4.3"
+DEFAULT_FALLBACK_TAG="v0.4.4"
 
 # Ensure standard binary directories are in PATH (important under sudo/secure_path)
 for extra_path in /usr/local/go/bin /usr/local/bin /usr/bin; do
@@ -36,10 +36,35 @@ log_success() { echo -e "${GREEN}[OK]${RESET}   $*"; }
 log_warn()    { echo -e "${YELLOW}[WARN]${RESET} $*"; }
 log_error()   { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
 
-print_help() {
-    cat <<EOF
-Funnel Bare-Metal Linux Installer & Upgrade Assistant
+# Helper: Print reusable ASCII header and banner
+print_ascii_banner() {
+    local subtitle="${1:-}"
+    echo -e "${CYAN}${BOLD}"
+    cat <<'EOF'
+ ███████████                                           ████ 
+░░███░░░░░░█                                          ░░███ 
+ ░███   █ ░  █████ ████ ████████   ████████    ██████  ░███ 
+ ░███████   ░░███ ░███ ░░███░░███ ░░███░░███  ███░░███ ░███ 
+ ░███░░░█    ░███ ░███  ░███ ░███  ░███ ░███ ░███████  ░███ 
+ ░███  ░     ░███ ░███  ░███ ░███  ░███ ░███ ░███░░░   ░███ 
+ █████       ░░████████ ████ █████ ████ █████░░██████  █████
+░░░░░         ░░░░░░░░ ░░░░ ░░░░░ ░░░░ ░░░░░  ░░░░░░  ░░░░░ 
+EOF
+    echo -e -n "${RESET}"
+    if [ -n "${subtitle}" ]; then
+        echo "================================================================================"
+        local title="Funnel ${subtitle}"
+        local pad=$(( (80 - ${#title}) / 2 ))
+        if [ "${pad}" -lt 0 ]; then pad=0; fi
+        printf "%*s%s\n" "${pad}" "" "${title}"
+        echo "================================================================================"
+    fi
+}
 
+print_help() {
+    print_ascii_banner "Bare-Metal Linux Installer & Upgrade Assistant"
+    echo ""
+    cat <<EOF
 Usage:
   sudo bash deploy/install.sh [OPTIONS]
 
@@ -182,31 +207,71 @@ else
     MODE="install"
 fi
 
-# Handle --check flag
-if [ "${CHECK_ONLY}" = true ]; then
-    echo "================================================================================"
-    echo "                      Funnel Version Check"
-    echo "================================================================================"
-    echo "Installed version: ${CURRENT_VERSION}"
-    LATEST_TAG="$(get_latest_release_tag)"
-    echo "Latest release:    ${LATEST_TAG}"
-    echo "--------------------------------------------------------------------------------"
-    if [ "${CURRENT_VERSION}" != "unknown" ] && [ "${CURRENT_VERSION}" = "${LATEST_TAG}" ]; then
-        log_success "Funnel is already at the latest release (${LATEST_TAG})."
-    else
-        log_info "A different or newer release is available (${LATEST_TAG})."
-        echo "To upgrade, run:"
-        echo "  sudo bash deploy/install.sh --upgrade"
+# Helper: Resolve target/new version to be installed
+resolve_target_version() {
+    local target="${TARGET_VERSION:-}"
+    if [ -n "${target}" ] && [ "${target}" != "latest" ]; then
+        if [[ "${target}" =~ ^[0-9]+\.[0-9]+ ]]; then
+            target="v${target}"
+        fi
+        echo "${target}"
+        return 0
     fi
-    echo "================================================================================"
-    exit 0
-fi
 
-# Root privilege validation (required for install and upgrade operations)
-if [ "$(id -u)" -ne 0 ]; then
-    log_error "Installation and upgrade operations must be run as root (e.g. sudo bash deploy/install.sh)."
-    exit 1
-fi
+    # 1. Check local pre-compiled binary if bin/funnel exists
+    local bin_source="${SCRIPT_DIR}/../bin/funnel"
+    if [ -f "${bin_source}" ] && [ -x "${bin_source}" ]; then
+        local bin_ver
+        bin_ver="$("${bin_source}" version 2>/dev/null | grep -oE 'v?[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9.]+)?' | head -n1 || true)"
+        if [ -n "${bin_ver}" ]; then
+            if [[ "${bin_ver}" =~ ^[0-9]+\.[0-9]+ ]]; then
+                bin_ver="v${bin_ver}"
+            fi
+            echo "${bin_ver}"
+            return 0
+        fi
+    fi
+
+    # 2. Check bundled release archive in dist/
+    if [ -n "${ARCH:-}" ]; then
+        local dist_match
+        dist_match="$(ls -1 "${SCRIPT_DIR}/../dist/"*"-linux-${ARCH}.tar.gz" 2>/dev/null | sort -V | tail -n1 || true)"
+        if [ -n "${dist_match}" ] && [ -f "${dist_match}" ]; then
+            local dist_ver
+            dist_ver="$(echo "${dist_match##*/}" | grep -oE 'v?[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9.]+)?' | head -n1 || true)"
+            if [ -n "${dist_ver}" ]; then
+                if [[ "${dist_ver}" =~ ^[0-9]+\.[0-9]+ ]]; then
+                    dist_ver="v${dist_ver}"
+                fi
+                echo "${dist_ver}"
+                return 0
+            fi
+        fi
+    fi
+
+    # 3. Check internal/version/version.go if in source checkout
+    if [ -f "${SCRIPT_DIR}/../internal/version/version.go" ]; then
+        local src_ver
+        src_ver="$(grep -E '^\s*var\s+Version\s*=' "${SCRIPT_DIR}/../internal/version/version.go" 2>/dev/null | sed -E 's/.*"([^"]+)".*/\1/' || true)"
+        if [ -n "${src_ver}" ]; then
+            if [[ "${src_ver}" =~ ^[0-9]+\.[0-9]+ ]]; then
+                src_ver="v${src_ver}"
+            fi
+            echo "${src_ver}"
+            return 0
+        fi
+    fi
+
+    # 4. Check GitHub latest release tag
+    local latest
+    latest="$(get_latest_release_tag)"
+    if [ -n "${latest}" ]; then
+        echo "${latest}"
+        return 0
+    fi
+
+    echo "${DEFAULT_FALLBACK_TAG}"
+}
 
 # Detect host architecture
 ARCH_RAW="$(uname -m)"
@@ -225,26 +290,48 @@ case "${ARCH_RAW}" in
         ;;
 esac
 
-# Print banner
-echo "================================================================================"
-if [ "${MODE}" = "upgrade" ]; then
-    echo "                    Funnel Bare-Metal Linux Upgrade"
-else
-    echo "                   Funnel Bare-Metal Linux Installer"
-fi
-echo "================================================================================"
-if [ "${MODE}" = "upgrade" ]; then
-    echo "Operation Mode    : Upgrade"
-    echo "Installed Version : ${CURRENT_VERSION}"
-    if [ -n "${TARGET_VERSION}" ]; then
-        echo "Target Version    : ${TARGET_VERSION}"
+# Resolve target/new version to be installed
+TARGET_VERSION="$(resolve_target_version)"
+
+# Handle --check flag
+if [ "${CHECK_ONLY}" = true ]; then
+    LATEST_TAG="$(get_latest_release_tag)"
+    print_ascii_banner "Version Check"
+    echo "Installed version       : ${CURRENT_VERSION}"
+    echo "Latest release          : ${LATEST_TAG}"
+    echo "New version to install  : ${TARGET_VERSION}"
+    echo "--------------------------------------------------------------------------------"
+    if [ "${CURRENT_VERSION}" != "unknown" ] && [ "${CURRENT_VERSION}" = "${LATEST_TAG}" ]; then
+        log_success "Funnel is already at the latest release (${LATEST_TAG})."
+    else
+        log_info "A different or newer release is available (${LATEST_TAG})."
+        echo "To upgrade, run:"
+        echo "  sudo bash deploy/install.sh --upgrade"
     fi
-else
-    echo "Operation Mode    : Fresh Installation"
+    echo "================================================================================"
+    exit 0
 fi
-echo "Host Architecture : ${ARCH_RAW} (${ARCH:-unsupported for pre-compiled releases})"
+
+# Print banner
+if [ "${MODE}" = "upgrade" ]; then
+    print_ascii_banner "Bare-Metal Linux Upgrade"
+    echo "Operation Mode          : Upgrade"
+    echo "Installed Version       : ${CURRENT_VERSION}"
+    echo "New Version to Install  : ${TARGET_VERSION}"
+else
+    print_ascii_banner "Bare-Metal Linux Installer"
+    echo "Operation Mode          : Fresh Installation"
+    echo "New Version to Install  : ${TARGET_VERSION}"
+fi
+echo "Host Architecture       : ${ARCH_RAW} (${ARCH:-unsupported for pre-compiled releases})"
 echo "================================================================================"
 echo ""
+
+# Root privilege validation (required for install and upgrade operations)
+if [ "$(id -u)" -ne 0 ]; then
+    log_error "Installation and upgrade operations must be run as root (e.g. sudo bash deploy/install.sh)."
+    exit 1
+fi
 
 # Detect Systemd Status and active state
 SYSTEMD_ACTIVE=false
@@ -365,7 +452,7 @@ fi
 # -----------------------------------------------------------------------------
 # 4. Acquire and Validate Candidate Binary
 # -----------------------------------------------------------------------------
-echo "[3/6] Acquiring and verifying Funnel static binary..."
+echo "[3/6] Acquiring and verifying Funnel static binary (${TARGET_VERSION})..."
 BIN_SOURCE="${SCRIPT_DIR}/../bin/funnel"
 
 if [ -z "${INSTALL_METHOD}" ]; then
@@ -721,24 +808,25 @@ echo "==========================================================================
 if [ "${MODE}" = "upgrade" ]; then
     echo "                 Funnel Successfully Upgraded!"
     echo "================================================================================"
-    echo "Previous Version: ${CURRENT_VERSION}"
-    echo "Current Version : ${CANDIDATE_VERSION:-${CURRENT_VERSION}}"
+    echo "Previous Version        : ${CURRENT_VERSION}"
+    echo "Current Version         : ${CANDIDATE_VERSION:-${TARGET_VERSION}}"
     if [ -n "${BACKUP_DIR}" ]; then
-        echo "Database Backup : ${BACKUP_DIR}"
+        echo "Database Backup         : ${BACKUP_DIR}"
     fi
     if [ "${SYSTEMD_ACTIVE}" = true ]; then
-        echo "Service Status  : $(systemctl is-active funnel.service 2>/dev/null || echo 'inactive')"
+        echo "Service Status          : $(systemctl is-active funnel.service 2>/dev/null || echo 'inactive')"
     fi
-    echo "Service Address : http://127.0.0.1:8000"
+    echo "Service Address         : http://127.0.0.1:8000"
     echo ""
     echo "All existing databases, port groups, access keys, and logs have been preserved."
 else
     echo "              Funnel Successfully Installed & Started!"
     echo "================================================================================"
+    echo "Installed Version       : ${CANDIDATE_VERSION:-${TARGET_VERSION}}"
     if [ "${SYSTEMD_ACTIVE}" = true ]; then
-        echo "Service Status  : $(systemctl is-active funnel.service 2>/dev/null || echo 'inactive')"
+        echo "Service Status          : $(systemctl is-active funnel.service 2>/dev/null || echo 'inactive')"
     fi
-    echo "Service Address : http://127.0.0.1:8000"
+    echo "Service Address         : http://127.0.0.1:8000"
     echo ""
     echo "To view initial setup token and logs, run:"
     echo "  journalctl -u funnel.service -n 25 --no-pager"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="${1:-${VERSION:-0.4.3}}"
+VERSION="${1:-${VERSION:-0.4.4}}"
 DIST_DIR="dist"
 LDFLAGS="-s -w -X github.com/AhmadShamli/Funnel/internal/version.Version=${VERSION}"
 
