@@ -75,9 +75,11 @@
     </form>
     {{end}}
 
+    {{if eq adminPath "/admin"}}
     <div style="margin-top: 2rem; text-align: center; font-size: 0.8rem; color: var(--text-muted);">
       <a href="/admin/login" style="color: var(--text-muted);">Administrator Portal</a>
     </div>
+    {{end}}
   </div>
 </div>
 {{end}}

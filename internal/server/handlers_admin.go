@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/netip"
 	"net/url"
+	"path"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,14 +27,16 @@ import (
 )
 
 type AdminHandlers struct {
-	cfg         *config.Config
-	db          *database.DB
-	engine      *policy.Engine
-	rateLimiter *auth.RateLimiter
-	resolver    *ipresolver.Resolver
-	helper      *firewall.HelperClient
-	factory     *firewall.Factory
-	tm          *web.TemplateManager
+	cfg               *config.Config
+	db                *database.DB
+	engine            *policy.Engine
+	rateLimiter       *auth.RateLimiter
+	resolver          *ipresolver.Resolver
+	helper            *firewall.HelperClient
+	factory           *firewall.Factory
+	tm                *web.TemplateManager
+	adminPathProvider func() string
+	setAdminPathFunc  func(string)
 }
 
 func NewAdminHandlers(
@@ -43,17 +48,43 @@ func NewAdminHandlers(
 	helper *firewall.HelperClient,
 	factory *firewall.Factory,
 	tm *web.TemplateManager,
+	adminPathProvider func() string,
+	setAdminPathFunc func(string),
 ) *AdminHandlers {
 	return &AdminHandlers{
-		cfg:         cfg,
-		db:          db,
-		engine:      engine,
-		rateLimiter: rl,
-		resolver:    resolver,
-		helper:      helper,
-		factory:     factory,
-		tm:          tm,
+		cfg:               cfg,
+		db:                db,
+		engine:            engine,
+		rateLimiter:       rl,
+		resolver:          resolver,
+		helper:            helper,
+		factory:           factory,
+		tm:                tm,
+		adminPathProvider: adminPathProvider,
+		setAdminPathFunc:  setAdminPathFunc,
 	}
+}
+
+func (h *AdminHandlers) GetAdminPath() string {
+	if h.adminPathProvider != nil {
+		return h.adminPathProvider()
+	}
+	return "/admin"
+}
+
+func (h *AdminHandlers) adminURL(path string) string {
+	prefix := h.GetAdminPath()
+	if path == "" || path == "/" {
+		return prefix
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	return prefix + path
+}
+
+func (h *AdminHandlers) adminRedirect(w http.ResponseWriter, r *http.Request, path string) {
+	http.Redirect(w, r, h.adminURL(path), http.StatusSeeOther)
 }
 
 // --- Auth Handlers ---
@@ -67,6 +98,7 @@ func (h *AdminHandlers) HandleLoginGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := map[string]interface{}{
+		"AdminPath": h.GetAdminPath(),
 		"CSRFToken": GetCSRFToken(r),
 		"Error":     r.URL.Query().Get("error"),
 	}
@@ -82,7 +114,7 @@ func (h *AdminHandlers) HandleLoginPost(w http.ResponseWriter, r *http.Request) 
 	// Rate limit check
 	rlResult := h.rateLimiter.CheckAdminLogin(clientIP.String(), now)
 	if rlResult.Blocked {
-		http.Redirect(w, r, fmt.Sprintf("/admin/login?error=Rate+limit+exceeded.+Retry+in+%d+seconds", rlResult.RetryAfterSeconds), http.StatusSeeOther)
+		h.adminRedirect(w, r, fmt.Sprintf("/login?error=Rate+limit+exceeded.+Retry+in+%d+seconds", rlResult.RetryAfterSeconds))
 		return
 	}
 
@@ -105,7 +137,7 @@ func (h *AdminHandlers) HandleLoginPost(w http.ResponseWriter, r *http.Request) 
 			TargetIP:        clientIP.String(),
 			DetailsJSON:     `{"reason":"invalid credentials or account locked"}`,
 		})
-		http.Redirect(w, r, "/admin/login?error=Invalid+username+or+password", http.StatusSeeOther)
+		h.adminRedirect(w, r, "/login?error=Invalid+username+or+password")
 		return
 	}
 
@@ -125,7 +157,7 @@ func (h *AdminHandlers) HandleLoginPost(w http.ResponseWriter, r *http.Request) 
 			TargetIP:        clientIP.String(),
 			DetailsJSON:     `{"reason":"incorrect password"}`,
 		})
-		http.Redirect(w, r, "/admin/login?error=Invalid+username+or+password", http.StatusSeeOther)
+		h.adminRedirect(w, r, "/login?error=Invalid+username+or+password")
 		return
 	}
 
@@ -145,7 +177,7 @@ func (h *AdminHandlers) HandleLoginPost(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := h.db.CreateAdminSession(r.Context(), session); err != nil {
-		http.Redirect(w, r, "/admin/login?error=Failed+to+create+session", http.StatusSeeOther)
+		h.adminRedirect(w, r, "/login?error=Failed+to+create+session")
 		return
 	}
 
@@ -168,7 +200,7 @@ func (h *AdminHandlers) HandleLoginPost(w http.ResponseWriter, r *http.Request) 
 		DetailsJSON:     `{"status":"authenticated"}`,
 	})
 
-	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+	h.adminRedirect(w, r, "")
 }
 
 func (h *AdminHandlers) HandleLogout(w http.ResponseWriter, r *http.Request) {
@@ -185,7 +217,7 @@ func (h *AdminHandlers) HandleLogout(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 	})
 
-	http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+	h.adminRedirect(w, r, "/login")
 }
 
 // --- Dashboard ---
@@ -236,7 +268,7 @@ func (h *AdminHandlers) HandleAccessKeysPost(w http.ResponseWriter, r *http.Requ
 	password := strings.TrimSpace(r.FormValue("password"))
 
 	if name == "" || password == "" {
-		http.Redirect(w, r, "/admin/access-keys?error=Name+and+password+are+required", http.StatusSeeOther)
+		h.adminRedirect(w, r, "/access-keys?error=Name+and+password+are+required")
 		return
 	}
 
@@ -296,7 +328,7 @@ func (h *AdminHandlers) HandleAccessKeysPost(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := h.db.CreateAccessKey(r.Context(), key); err != nil {
-		http.Redirect(w, r, "/admin/access-keys?error="+err.Error(), http.StatusSeeOther)
+		h.adminRedirect(w, r, "/access-keys?error="+err.Error())
 		return
 	}
 
@@ -308,7 +340,7 @@ func (h *AdminHandlers) HandleAccessKeysPost(w http.ResponseWriter, r *http.Requ
 		DetailsJSON:     fmt.Sprintf(`{"key_name":"%s"}`, name),
 	})
 
-	http.Redirect(w, r, "/admin/access-keys?success=Access+key+created", http.StatusSeeOther)
+	h.adminRedirect(w, r, "/access-keys?success=Access+key+created")
 }
 
 func (h *AdminHandlers) HandleAccessKeysToggle(w http.ResponseWriter, r *http.Request) {
@@ -321,14 +353,14 @@ func (h *AdminHandlers) HandleAccessKeysToggle(w http.ResponseWriter, r *http.Re
 		_ = h.db.UpdateAccessKey(r.Context(), key)
 	}
 
-	http.Redirect(w, r, "/admin/access-keys", http.StatusSeeOther)
+	h.adminRedirect(w, r, "/access-keys")
 }
 
 func (h *AdminHandlers) HandleAccessKeysDelete(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, _ := strconv.ParseInt(idStr, 10, 64)
 	_ = h.db.DeleteAccessKey(r.Context(), id)
-	http.Redirect(w, r, "/admin/access-keys", http.StatusSeeOther)
+	h.adminRedirect(w, r, "/access-keys")
 }
 
 func (h *AdminHandlers) HandleAccessKeysUpdate(w http.ResponseWriter, r *http.Request) {
@@ -336,19 +368,19 @@ func (h *AdminHandlers) HandleAccessKeysUpdate(w http.ResponseWriter, r *http.Re
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		http.Redirect(w, r, "/admin/access-keys?error=Invalid+access+key+ID", http.StatusSeeOther)
+		h.adminRedirect(w, r, "/access-keys?error=Invalid+access+key+ID")
 		return
 	}
 
 	key, err := h.db.GetAccessKeyByID(r.Context(), id)
 	if err != nil || key == nil {
-		http.Redirect(w, r, "/admin/access-keys?error=Access+key+not+found", http.StatusSeeOther)
+		h.adminRedirect(w, r, "/access-keys?error=Access+key+not+found")
 		return
 	}
 
 	name := strings.TrimSpace(r.FormValue("name"))
 	if name == "" {
-		http.Redirect(w, r, "/admin/access-keys?error=Key+name+is+required", http.StatusSeeOther)
+		h.adminRedirect(w, r, "/access-keys?error=Key+name+is+required")
 		return
 	}
 	key.Name = name
@@ -410,7 +442,7 @@ func (h *AdminHandlers) HandleAccessKeysUpdate(w http.ResponseWriter, r *http.Re
 	key.AllowExtend = r.FormValue("allow_extend") == "1"
 
 	if err := h.db.UpdateAccessKey(r.Context(), key); err != nil {
-		http.Redirect(w, r, "/admin/access-keys?error="+err.Error(), http.StatusSeeOther)
+		h.adminRedirect(w, r, "/access-keys?error="+err.Error())
 		return
 	}
 
@@ -422,7 +454,7 @@ func (h *AdminHandlers) HandleAccessKeysUpdate(w http.ResponseWriter, r *http.Re
 		DetailsJSON:     fmt.Sprintf(`{"key_name":"%s"}`, name),
 	})
 
-	http.Redirect(w, r, "/admin/access-keys?success=Access+key+updated", http.StatusSeeOther)
+	h.adminRedirect(w, r, "/access-keys?success=Access+key+updated")
 }
 
 // --- Port Groups ---
@@ -460,7 +492,7 @@ func (h *AdminHandlers) HandlePortGroupsPost(w http.ResponseWriter, r *http.Requ
 
 	portRules, err := parsePortRulesFromRequest(r)
 	if err != nil {
-		http.Redirect(w, r, "/admin/port-groups?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		h.adminRedirect(w, r, "/port-groups?error="+url.QueryEscape(err.Error()))
 		return
 	}
 
@@ -478,18 +510,18 @@ func (h *AdminHandlers) HandlePortGroupsPost(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := h.db.CreatePortGroup(r.Context(), pg); err != nil {
-		http.Redirect(w, r, "/admin/port-groups?error="+err.Error(), http.StatusSeeOther)
+		h.adminRedirect(w, r, "/port-groups?error="+err.Error())
 		return
 	}
 
-	http.Redirect(w, r, "/admin/port-groups?success=Port+group+created", http.StatusSeeOther)
+	h.adminRedirect(w, r, "/port-groups?success=Port+group+created")
 }
 
 func (h *AdminHandlers) HandlePortGroupsDelete(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, _ := strconv.ParseInt(idStr, 10, 64)
 	_ = h.db.DeletePortGroup(r.Context(), id)
-	http.Redirect(w, r, "/admin/port-groups", http.StatusSeeOther)
+	h.adminRedirect(w, r, "/port-groups")
 }
 
 func (h *AdminHandlers) HandlePortGroupsUpdate(w http.ResponseWriter, r *http.Request) {
@@ -497,19 +529,19 @@ func (h *AdminHandlers) HandlePortGroupsUpdate(w http.ResponseWriter, r *http.Re
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		http.Redirect(w, r, "/admin/port-groups?error=Invalid+port+group+ID", http.StatusSeeOther)
+		h.adminRedirect(w, r, "/port-groups?error=Invalid+port+group+ID")
 		return
 	}
 
 	pg, err := h.db.GetPortGroupByID(r.Context(), id)
 	if err != nil || pg == nil {
-		http.Redirect(w, r, "/admin/port-groups?error=Port+group+not+found", http.StatusSeeOther)
+		h.adminRedirect(w, r, "/port-groups?error=Port+group+not+found")
 		return
 	}
 
 	name := strings.TrimSpace(r.FormValue("name"))
 	if name == "" {
-		http.Redirect(w, r, "/admin/port-groups?error=Group+name+is+required", http.StatusSeeOther)
+		h.adminRedirect(w, r, "/port-groups?error=Group+name+is+required")
 		return
 	}
 	pg.Name = name
@@ -544,13 +576,13 @@ func (h *AdminHandlers) HandlePortGroupsUpdate(w http.ResponseWriter, r *http.Re
 
 	portRules, err := parsePortRulesFromRequest(r)
 	if err != nil {
-		http.Redirect(w, r, "/admin/port-groups?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		h.adminRedirect(w, r, "/port-groups?error="+url.QueryEscape(err.Error()))
 		return
 	}
 	pg.Ports = portRules
 
 	if err := h.db.UpdatePortGroup(r.Context(), pg); err != nil {
-		http.Redirect(w, r, "/admin/port-groups?error="+err.Error(), http.StatusSeeOther)
+		h.adminRedirect(w, r, "/port-groups?error="+err.Error())
 		return
 	}
 
@@ -562,7 +594,7 @@ func (h *AdminHandlers) HandlePortGroupsUpdate(w http.ResponseWriter, r *http.Re
 		DetailsJSON:     fmt.Sprintf(`{"group_name":"%s"}`, name),
 	})
 
-	http.Redirect(w, r, "/admin/port-groups?success=Port+group+updated", http.StatusSeeOther)
+	h.adminRedirect(w, r, "/port-groups?success=Port+group+updated")
 }
 
 // parsePortRulesFromRequest extracts and expands both single ports and port ranges from submitted form data.
@@ -731,18 +763,18 @@ func (h *AdminHandlers) HandleAllowedNetworksPost(w http.ResponseWriter, r *http
 	}
 
 	if err := h.db.CreateAllowedNetwork(r.Context(), an); err != nil {
-		http.Redirect(w, r, "/admin/allowed-networks?error="+err.Error(), http.StatusSeeOther)
+		h.adminRedirect(w, r, "/allowed-networks?error="+err.Error())
 		return
 	}
 
-	http.Redirect(w, r, "/admin/allowed-networks?success=Network+rule+created", http.StatusSeeOther)
+	h.adminRedirect(w, r, "/allowed-networks?success=Network+rule+created")
 }
 
 func (h *AdminHandlers) HandleAllowedNetworksDelete(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, _ := strconv.ParseInt(idStr, 10, 64)
 	_ = h.db.DeleteAllowedNetwork(r.Context(), id)
-	http.Redirect(w, r, "/admin/allowed-networks", http.StatusSeeOther)
+	h.adminRedirect(w, r, "/allowed-networks")
 }
 
 func (h *AdminHandlers) HandleAllowedNetworksUpdate(w http.ResponseWriter, r *http.Request) {
@@ -750,20 +782,20 @@ func (h *AdminHandlers) HandleAllowedNetworksUpdate(w http.ResponseWriter, r *ht
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		http.Redirect(w, r, "/admin/allowed-networks?error=Invalid+network+rule+ID", http.StatusSeeOther)
+		h.adminRedirect(w, r, "/allowed-networks?error=Invalid+network+rule+ID")
 		return
 	}
 
 	an, err := h.db.GetAllowedNetworkByID(r.Context(), id)
 	if err != nil || an == nil {
-		http.Redirect(w, r, "/admin/allowed-networks?error=Network+rule+not+found", http.StatusSeeOther)
+		h.adminRedirect(w, r, "/allowed-networks?error=Network+rule+not+found")
 		return
 	}
 
 	name := strings.TrimSpace(r.FormValue("name"))
 	cidr := strings.TrimSpace(r.FormValue("network_cidr"))
 	if name == "" || cidr == "" {
-		http.Redirect(w, r, "/admin/allowed-networks?error=Name+and+CIDR+are+required", http.StatusSeeOther)
+		h.adminRedirect(w, r, "/allowed-networks?error=Name+and+CIDR+are+required")
 		return
 	}
 	an.Name = name
@@ -786,7 +818,7 @@ func (h *AdminHandlers) HandleAllowedNetworksUpdate(w http.ResponseWriter, r *ht
 	an.PortGroupIDs = portGroupIDs
 
 	if err := h.db.UpdateAllowedNetwork(r.Context(), an); err != nil {
-		http.Redirect(w, r, "/admin/allowed-networks?error="+err.Error(), http.StatusSeeOther)
+		h.adminRedirect(w, r, "/allowed-networks?error="+err.Error())
 		return
 	}
 
@@ -798,7 +830,7 @@ func (h *AdminHandlers) HandleAllowedNetworksUpdate(w http.ResponseWriter, r *ht
 		DetailsJSON:     fmt.Sprintf(`{"network_name":"%s","cidr":"%s"}`, name, cidr),
 	})
 
-	http.Redirect(w, r, "/admin/allowed-networks?success=Network+rule+updated", http.StatusSeeOther)
+	h.adminRedirect(w, r, "/allowed-networks?success=Network+rule+updated")
 }
 
 // --- Open Ports ---
@@ -1057,11 +1089,11 @@ func (h *AdminHandlers) HandleGrantsRevoke(w http.ResponseWriter, r *http.Reques
 	now := time.Now().UTC()
 
 	_ = h.engine.RevokeGrant(r.Context(), id, netip.Addr{}, now)
-	target := "/admin/grants?success=Grant+revoked"
+	target := "/grants?success=Grant+revoked"
 	if r.URL.Query().Get("from") == "open-ports" || strings.Contains(r.Header.Get("Referer"), "open-ports") {
-		target = "/admin/open-ports?success=Grant+revoked"
+		target = "/open-ports?success=Grant+revoked"
 	}
-	http.Redirect(w, r, target, http.StatusSeeOther)
+	h.adminRedirect(w, r, target)
 }
 
 // --- Firewalls ---
@@ -1096,11 +1128,11 @@ func (h *AdminHandlers) HandleFirewallsValidate(w http.ResponseWriter, r *http.R
 		if resp != nil && resp.Error != "" {
 			msg += ": " + resp.Error
 		}
-		http.Redirect(w, r, "/admin/firewalls?error="+msg, http.StatusSeeOther)
+		h.adminRedirect(w, r, "/firewalls?error="+msg)
 		return
 	}
 
-	http.Redirect(w, r, "/admin/firewalls?success=Firewall+driver+validated+successfully", http.StatusSeeOther)
+	h.adminRedirect(w, r, "/firewalls?success=Firewall+driver+validated+successfully")
 }
 
 // --- Audit ---
@@ -1125,6 +1157,7 @@ func (h *AdminHandlers) HandleSettingsGet(w http.ResponseWriter, r *http.Request
 	}
 
 	data := h.baseData(r, "settings")
+	data["AdminPath"] = h.GetAdminPath()
 	data["ProxyMode"] = h.resolver.GetProxyMode()
 	data["TrustedProxiesStr"] = strings.Join(trustedStrs, ", ")
 	data["CircuitBreakerActive"] = cbActive
@@ -1140,25 +1173,25 @@ func (h *AdminHandlers) HandleSettingsProxyPost(w http.ResponseWriter, r *http.R
 
 	prefixes, err := config.ParseCIDRList(proxiesStr)
 	if err != nil {
-		http.Redirect(w, r, "/admin/settings?error=Invalid+CIDR+list", http.StatusSeeOther)
+		h.adminRedirect(w, r, "/settings?error=Invalid+CIDR+list")
 		return
 	}
 
 	h.resolver.SetProxyMode(mode)
 	h.resolver.SetTrustedProxies(prefixes)
 
-	http.Redirect(w, r, "/admin/settings?success=Proxy+settings+updated", http.StatusSeeOther)
+	h.adminRedirect(w, r, "/settings?success=Proxy+settings+updated")
 }
 
 func (h *AdminHandlers) HandleSettingsSyncCloudflare(w http.ResponseWriter, r *http.Request) {
 	prefixes, err := h.resolver.FetchCloudflareCIDRs(r.Context())
 	if err != nil {
-		http.Redirect(w, r, "/admin/settings?error="+err.Error(), http.StatusSeeOther)
+		h.adminRedirect(w, r, "/settings?error="+err.Error())
 		return
 	}
 
 	h.resolver.AddTrustedProxies(prefixes)
-	http.Redirect(w, r, fmt.Sprintf("/admin/settings?success=Synced+%d+Cloudflare+CIDR+ranges", len(prefixes)), http.StatusSeeOther)
+	h.adminRedirect(w, r, fmt.Sprintf("/settings?success=Synced+%d+Cloudflare+CIDR+ranges", len(prefixes)))
 }
 
 func (h *AdminHandlers) HandleCircuitBreakerReset(w http.ResponseWriter, r *http.Request) {
@@ -1170,7 +1203,84 @@ func (h *AdminHandlers) HandleCircuitBreakerReset(w http.ResponseWriter, r *http
 		TargetIP:        "",
 		DetailsJSON:     `{"action":"manual_reset"}`,
 	})
-	http.Redirect(w, r, "/admin?success=Circuit+breaker+reset+successfully", http.StatusSeeOther)
+	h.adminRedirect(w, r, "?success=Circuit+breaker+reset+successfully")
+}
+
+// HandleSettingsAdminPathPost updates the administrator portal URL path.
+func (h *AdminHandlers) HandleSettingsAdminPathPost(w http.ResponseWriter, r *http.Request) {
+	confirm := r.FormValue("confirm")
+	if confirm != "true" && confirm != "on" && confirm != "1" {
+		h.adminRedirect(w, r, "/settings?error=Confirmation+checkbox+is+required+to+change+the+admin+URL+path")
+		return
+	}
+
+	newPath := strings.TrimSpace(r.FormValue("admin_path"))
+	if !strings.HasPrefix(newPath, "/") {
+		newPath = "/" + newPath
+	}
+	newPath = path.Clean(newPath)
+
+	if newPath == "/" {
+		h.adminRedirect(w, r, "/settings?error=Admin+URL+path+cannot+be+the+root+URL")
+		return
+	}
+
+	if len(newPath) < 2 || len(newPath) > 64 {
+		h.adminRedirect(w, r, "/settings?error=Admin+URL+path+must+be+between+2+and+64+characters")
+		return
+	}
+
+	validChars := regexp.MustCompile(`^/[a-zA-Z0-9_\-]+(/[a-zA-Z0-9_\-]+)*$`)
+	if !validChars.MatchString(newPath) {
+		h.adminRedirect(w, r, "/settings?error=Admin+URL+path+may+only+contain+alphanumeric+characters,+hyphens,+and+underscores")
+		return
+	}
+
+	reserved := map[string]bool{
+		"/":       true,
+		"/access": true,
+		"/static": true,
+		"/health": true,
+		"/setup":  true,
+	}
+	if reserved[newPath] || strings.HasPrefix(newPath, "/access/") || strings.HasPrefix(newPath, "/static/") || strings.HasPrefix(newPath, "/health/") || strings.HasPrefix(newPath, "/setup/") {
+		h.adminRedirect(w, r, "/settings?error=Admin+URL+path+conflicts+with+reserved+system+routes")
+		return
+	}
+
+	oldPath := h.GetAdminPath()
+	if newPath == oldPath {
+		h.adminRedirect(w, r, "/settings?success=Admin+URL+path+is+already+set+to+"+url.QueryEscape(newPath))
+		return
+	}
+
+	if err := h.db.SetSystemSetting(r.Context(), "admin_path", newPath); err != nil {
+		h.adminRedirect(w, r, "/settings?error=Failed+to+save+admin+URL+path:+"+url.QueryEscape(err.Error()))
+		return
+	}
+
+	if h.setAdminPathFunc != nil {
+		h.setAdminPathFunc(newPath)
+	}
+
+	adminUser := GetAdminUser(r)
+	adminUsername := "admin"
+	if adminUser != nil {
+		adminUsername = adminUser.Username
+	}
+
+	_ = h.db.RecordAuditEvent(r.Context(), &models.AuditEvent{
+		EventType:       "ADMIN_PATH_CHANGED",
+		ActorType:       "admin",
+		ActorIdentifier: adminUsername,
+		TargetIP:        GetClientIP(r).String(),
+		DetailsJSON:     fmt.Sprintf(`{"old_path":%q,"new_path":%q}`, oldPath, newPath),
+	})
+
+	log.Printf("[ADMIN] Admin URL path updated to %s by user %s (client IP: %s)", newPath, adminUsername, GetClientIP(r).String())
+
+	// Redirect directly to the new path
+	http.Redirect(w, r, newPath+"/settings?success=Admin+URL+path+successfully+updated+to+"+url.QueryEscape(newPath), http.StatusSeeOther)
 }
 
 // --- Admin Users ---
@@ -1197,7 +1307,7 @@ func (h *AdminHandlers) HandleUsersPost(w http.ResponseWriter, r *http.Request) 
 
 	hash, err := auth.HashAdminPassword(password, h.cfg.AdminMinPasswordLen)
 	if err != nil {
-		http.Redirect(w, r, "/admin/users?error="+err.Error(), http.StatusSeeOther)
+		h.adminRedirect(w, r, "/users?error="+err.Error())
 		return
 	}
 
@@ -1211,11 +1321,11 @@ func (h *AdminHandlers) HandleUsersPost(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := h.db.CreateAdminUser(r.Context(), u); err != nil {
-		http.Redirect(w, r, "/admin/users?error="+err.Error(), http.StatusSeeOther)
+		h.adminRedirect(w, r, "/users?error="+err.Error())
 		return
 	}
 
-	http.Redirect(w, r, "/admin/users?success=User+created", http.StatusSeeOther)
+	h.adminRedirect(w, r, "/users?success=User+created")
 }
 
 func (h *AdminHandlers) HandleUsersToggle(w http.ResponseWriter, r *http.Request) {
@@ -1228,14 +1338,14 @@ func (h *AdminHandlers) HandleUsersToggle(w http.ResponseWriter, r *http.Request
 		_ = h.db.UpdateAdminUser(r.Context(), u)
 	}
 
-	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
+	h.adminRedirect(w, r, "/users")
 }
 
 func (h *AdminHandlers) HandleUsersUnlock(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, _ := strconv.ParseInt(idStr, 10, 64)
 	_ = h.db.UnlockAdminUser(r.Context(), id)
-	http.Redirect(w, r, "/admin/users?success=User+unlocked", http.StatusSeeOther)
+	h.adminRedirect(w, r, "/users?success=User+unlocked")
 }
 
 // baseData prepares common template context variables.
@@ -1246,6 +1356,7 @@ func (h *AdminHandlers) baseData(r *http.Request, activeNav string) map[string]i
 
 	return map[string]interface{}{
 		"AdminUser":            GetAdminUser(r),
+		"AdminPath":            h.GetAdminPath(),
 		"ClientIP":             clientIP.String(),
 		"CSRFToken":            GetCSRFToken(r),
 		"ActiveNav":            activeNav,
@@ -1254,3 +1365,4 @@ func (h *AdminHandlers) baseData(r *http.Request, activeNav string) map[string]i
 		"FlashError":           r.URL.Query().Get("error"),
 	}
 }
+

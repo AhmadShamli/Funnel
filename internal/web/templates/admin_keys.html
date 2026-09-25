@@ -63,13 +63,13 @@
         <td>
           <div class="flex-row">
             <button type="button" class="btn btn-secondary btn-sm" data-modal-open="edit-key-modal-{{$key.ID}}">Edit</button>
-            <form action="/admin/access-keys/{{$key.ID}}/toggle" method="POST" style="margin: 0;">
+            <form action="{{adminURL "/access-keys"}}/{{$key.ID}}/toggle" method="POST" style="margin: 0;">
               <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
               <button type="submit" class="btn btn-secondary btn-sm">
                 {{if $key.IsActive}}Disable{{else}}Enable{{end}}
               </button>
             </form>
-            <form action="/admin/access-keys/{{$key.ID}}/delete" method="POST" style="margin: 0;" onsubmit="return confirm('Delete access key {{$key.Name}}?');">
+            <form action="{{adminURL "/access-keys"}}/{{$key.ID}}/delete" method="POST" style="margin: 0;" onsubmit="return confirm('Delete access key {{$key.Name}}?');">
               <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
               <button type="submit" class="btn btn-danger btn-sm">Delete</button>
             </form>
@@ -93,7 +93,7 @@
       <h3>Edit Access Key: {{$key.Name}}</h3>
       <button type="button" class="modal-close" data-modal-close>✕</button>
     </div>
-    <form action="/admin/access-keys/{{$key.ID}}" method="POST" autocomplete="off">
+    <form action="{{adminURL "/access-keys"}}/{{$key.ID}}" method="POST" autocomplete="off">
       <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
 
       <div class="form-group">
@@ -175,7 +175,7 @@
       <h3>Create Access Key</h3>
       <button type="button" class="modal-close" data-modal-close>✕</button>
     </div>
-    <form action="/admin/access-keys" method="POST" autocomplete="off">
+    <form action="{{adminURL "/access-keys"}}" method="POST" autocomplete="off">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
       <!-- Prevent browser heuristics from autofilling saved credentials into visitor key fields -->

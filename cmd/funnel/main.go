@@ -136,6 +136,13 @@ func runServe(args []string) {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	activeAdminPath := srvInstance.GetAdminPath()
+	displayHost := cfg.Host
+	if displayHost == "0.0.0.0" || displayHost == "" {
+		displayHost = "127.0.0.1"
+	}
+	log.Printf("[ADMIN] Active administrator portal path: %s (access at http://%s:%d%s)", activeAdminPath, displayHost, cfg.Port, activeAdminPath)
+
 	go func() {
 		log.Printf("[SERVER] Funnel HTTP server listening on http://%s (proxy_mode: %s)", addr, cfg.ProxyMode)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {

@@ -49,12 +49,12 @@
         <td>
           <div class="flex-row">
             {{if .LockedUntil}}
-            <form action="/admin/users/{{.ID}}/unlock" method="POST" style="margin: 0;">
+            <form action="{{adminURL "/users"}}/{{.ID}}/unlock" method="POST" style="margin: 0;">
               <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
               <button type="submit" class="btn btn-success btn-sm">Unlock</button>
             </form>
             {{end}}
-            <form action="/admin/users/{{.ID}}/toggle" method="POST" style="margin: 0;">
+            <form action="{{adminURL "/users"}}/{{.ID}}/toggle" method="POST" style="margin: 0;">
               <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
               <button type="submit" class="btn btn-secondary btn-sm">
                 {{if .IsActive}}Disable{{else}}Enable{{end}}
@@ -75,7 +75,7 @@
       <h3>Create Administrator Account</h3>
       <button type="button" class="modal-close" data-modal-close>✕</button>
     </div>
-    <form action="/admin/users" method="POST">
+    <form action="{{adminURL "/users"}}" method="POST">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
       <div class="form-group">

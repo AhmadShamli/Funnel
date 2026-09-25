@@ -2,31 +2,79 @@
 {{define "admin_content"}}
 <div class="content-header">
   <div>
-    <h2>Settings & Client IP Resolution</h2>
+    <h2>Settings & Security Configuration</h2>
     <p style="color: var(--text-secondary); font-size: 0.9rem;">
-      Manage proxy ingress trust, Cloudflare IP synchronization, and rate-limiting controls
+      Manage admin portal cloaking, proxy ingress trust, Cloudflare IP synchronization, and rate-limiting controls
     </p>
   </div>
 </div>
 
 <div class="metrics-grid">
   <div class="metric-card">
+    <div class="metric-label">Admin Portal Path</div>
+    <div class="metric-value" style="font-size: 1.3rem; font-family: monospace; color: #a78bfa;">
+      {{.AdminPath}}
+    </div>
+  </div>
+  <div class="metric-card">
     <div class="metric-label">Proxy Mode</div>
-    <div class="metric-value" style="font-size: 1.5rem; text-transform: uppercase; color: #38bdf8;">
+    <div class="metric-value" style="font-size: 1.3rem; text-transform: uppercase; color: #38bdf8;">
       {{.ProxyMode}}
     </div>
   </div>
   <div class="metric-card">
     <div class="metric-label">Your Client IP (Resolved)</div>
-    <div class="metric-value" style="font-size: 1.5rem; font-family: monospace; color: #34d399;">
+    <div class="metric-value" style="font-size: 1.3rem; font-family: monospace; color: #34d399;">
       {{.ClientIP}}
     </div>
   </div>
 </div>
 
 <div class="auth-card" style="max-width: 100%; margin-bottom: 2rem;">
+  <h3 style="margin-bottom: 0.5rem;">🛡️ Administrator Portal URL Path (URL Cloaking)</h3>
+  <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1.25rem;">
+    Customize the URL path used to access this administration panel (default: <code>/admin</code>). Concealing the admin URL mitigates opportunistic attack scans, automated bot probes, and targeted brute-force attempts.
+  </p>
+
+  <form id="admin-path-form" action="{{adminURL "/settings/admin-path"}}" method="POST" onsubmit="return confirmAdminPathChange(event);">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+    <div class="form-group">
+      <label for="admin_path">Admin Portal URL Path</label>
+      <input type="text" id="admin_path" name="admin_path" value="{{.AdminPath}}" required
+             pattern="^\/[a-zA-Z0-9_\-]+(\/[a-zA-Z0-9_\-]+)*$"
+             placeholder="/my-secret-admin"
+             style="font-family: monospace;">
+      <small style="color: var(--text-muted);">
+        Must start with <code>/</code> and contain only alphanumeric characters, hyphens, and underscores. Cannot conflict with reserved system paths (e.g. <code>/</code>, <code>/access</code>, <code>/static</code>, <code>/health</code>, <code>/setup</code>).
+      </small>
+    </div>
+
+    <div class="alert alert-warning" style="margin-bottom: 1rem; font-size: 0.85rem; background: rgba(245, 158, 11, 0.1); border-left: 3px solid #f59e0b; padding: 0.75rem 1rem; border-radius: 4px;">
+      <strong>⚠️ Important Notice:</strong>
+      <ul style="margin: 0.5rem 0 0 1.2rem; padding: 0;">
+        <li>Changing the admin path takes effect immediately. The previous path will return <strong>404 Not Found</strong>.</li>
+        <li>You will be redirected immediately to the new path. Remember to update your browser bookmarks.</li>
+        <li><strong>Forgotten Path Recovery:</strong> If you ever forget your custom path, restart Funnel or inspect the service logs (e.g. <code>journalctl -u funnel.service</code>) to view the active admin URL.</li>
+      </ul>
+    </div>
+
+    <div class="form-group" style="margin-bottom: 1rem;">
+      <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: normal; cursor: pointer;">
+        <input type="checkbox" id="confirm_path" name="confirm" value="true" required>
+        <span>I understand that the admin portal URL will change immediately and the current path will be disabled.</span>
+      </label>
+    </div>
+
+    <div class="flex-row">
+      <button type="submit" class="btn btn-primary btn-sm" id="btn-update-path">Update Admin URL Path</button>
+    </div>
+  </form>
+</div>
+
+<div class="auth-card" style="max-width: 100%; margin-bottom: 2rem;">
   <h3 style="margin-bottom: 1rem;">Ingress & Trusted Proxies</h3>
-  <form action="/admin/settings/proxy" method="POST">
+  <form action="{{adminURL "/settings/proxy"}}" method="POST">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
     <div class="form-group">
@@ -58,7 +106,7 @@
         Fetch official IPv4 & IPv6 CIDRs from cloudflare.com and append to trusted proxies.
       </div>
     </div>
-    <form action="/admin/settings/sync-cloudflare" method="POST" style="margin: 0;">
+    <form action="{{adminURL "/settings/sync-cloudflare"}}" method="POST" style="margin: 0;">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
       <button type="submit" class="btn btn-secondary btn-sm">Sync Cloudflare CIDRs</button>
     </form>
@@ -74,11 +122,52 @@
         Failed unique IPs window: {{.FailedIPsCount}} / {{.FailedIPsThreshold}}
       </div>
     </div>
-    <form action="/admin/circuit-breaker/reset" method="POST" style="margin: 0;">
+    <form action="{{adminURL "/circuit-breaker/reset"}}" method="POST" style="margin: 0;">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
       <button type="submit" class="btn btn-danger btn-sm">Reset Circuit Breaker</button>
     </form>
   </div>
 </div>
+
+<script>
+function confirmAdminPathChange(event) {
+  const input = document.getElementById('admin_path');
+  const checkbox = document.getElementById('confirm_path');
+  if (!input || !checkbox) return true;
+
+  const currentPath = {{.AdminPath}};
+  const newPath = input.value.trim();
+
+  if (newPath === currentPath) {
+    alert('The admin path is already set to ' + currentPath);
+    event.preventDefault();
+    return false;
+  }
+
+  if (!checkbox.checked) {
+    alert('Please check the confirmation box before updating the admin URL path.');
+    event.preventDefault();
+    return false;
+  }
+
+  const confirmed = confirm(
+    '⚠️ CONFIRM ADMIN PORTAL URL CHANGE\n\n' +
+    'Are you sure you want to change the admin URL path from:\n' +
+    '  ' + currentPath + '\n' +
+    'to:\n' +
+    '  ' + newPath + ' ?\n\n' +
+    '• The current path will stop working immediately (404 Not Found).\n' +
+    '• You will be redirected to the new URL immediately.\n' +
+    '• If forgotten, the path will be shown on app restart in the server logs.\n\n' +
+    'Click OK to proceed with this change.'
+  );
+
+  if (!confirmed) {
+    event.preventDefault();
+    return false;
+  }
+  return true;
+}
+</script>
 {{end}}
 {{template "admin_layout" .}}

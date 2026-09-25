@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/AhmadShamli/Funnel/internal/auth"
@@ -30,6 +32,9 @@ type Server struct {
 	tm             *web.TemplateManager
 	router         *chi.Mux
 	bootstrapToken *string
+	adminPath      string
+	adminMu        sync.RWMutex
+	adminRouter    chi.Router
 }
 
 // NewServer initializes the HTTP router and registers all routes.
@@ -44,6 +49,14 @@ func NewServer(
 	tm *web.TemplateManager,
 	bootstrapToken *string,
 ) (*Server, error) {
+	initialAdminPath := "/admin"
+	if cfg.AdminPath != "" {
+		initialAdminPath = cfg.AdminPath
+	}
+	if dbVal, err := db.GetSystemSetting(context.Background(), "admin_path"); err == nil && dbVal != "" {
+		initialAdminPath = dbVal
+	}
+
 	s := &Server{
 		cfg:            cfg,
 		db:             db,
@@ -55,10 +68,27 @@ func NewServer(
 		tm:             tm,
 		router:         chi.NewRouter(),
 		bootstrapToken: bootstrapToken,
+		adminPath:      initialAdminPath,
 	}
 
+	web.SetAdminPathProvider(s.GetAdminPath)
 	s.setupRoutes()
 	return s, nil
+}
+
+// GetAdminPath returns the active administration URL path.
+func (s *Server) GetAdminPath() string {
+	s.adminMu.RLock()
+	defer s.adminMu.RUnlock()
+	return s.adminPath
+}
+
+// SetAdminPath updates the active administration URL path in memory and in the web package.
+func (s *Server) SetAdminPath(newPath string) {
+	s.adminMu.Lock()
+	defer s.adminMu.Unlock()
+	s.adminPath = newPath
+	web.SetAdminPathProvider(func() string { return newPath })
 }
 
 // Handler returns the HTTP handler for testing or serving.
@@ -76,6 +106,33 @@ func (s *Server) setupRoutes() {
 	r.Use(chimiddleware.Recoverer)
 	r.Use(ClientIPMiddleware(s.resolver))
 	r.Use(CSRFMiddleware(s.cfg.CookieSecure))
+
+	// Dynamic Admin Dispatcher middleware:
+	// Intercepts requests matching the active admin path prefix and dispatches to the admin subrouter.
+	// When the admin path is changed at runtime or customized, non-matching paths (like old /admin)
+	// fall through to the public router which returns 404 Not Found.
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			adminPath := s.GetAdminPath()
+			p := req.URL.Path
+
+			if p == adminPath || strings.HasPrefix(p, adminPath+"/") {
+				subPath := strings.TrimPrefix(p, adminPath)
+				if subPath == "" {
+					subPath = "/"
+				}
+
+				r2 := req.Clone(req.Context())
+				r2.URL.Path = subPath
+				r2.URL.RawPath = ""
+
+				s.adminRouter.ServeHTTP(w, r2)
+				return
+			}
+
+			next.ServeHTTP(w, req)
+		})
+	})
 
 	// Static files
 	r.Handle("/static/*", web.StaticFileServer())
@@ -113,19 +170,20 @@ func (s *Server) setupRoutes() {
 	r.Post("/access/extend", visitorH.HandleExtend)
 
 	// Setup Wizard Handlers
-	setupH := NewSetupHandlers(s.cfg, s.db, s.tm, s.bootstrapToken)
+	setupH := NewSetupHandlers(s.cfg, s.db, s.tm, s.bootstrapToken, s.GetAdminPath)
 	r.Get("/setup", setupH.HandleSetupGet)
 	r.Post("/setup", setupH.HandleSetupPost)
 
-	// Admin Handlers
-	adminH := NewAdminHandlers(s.cfg, s.db, s.engine, s.rateLimiter, s.resolver, s.helper, s.factory, s.tm)
-	r.Get("/admin/login", adminH.HandleLoginGet)
-	r.Post("/admin/login", adminH.HandleLoginPost)
-	r.Post("/admin/logout", adminH.HandleLogout)
+	// Admin Handlers & Router
+	adminH := NewAdminHandlers(s.cfg, s.db, s.engine, s.rateLimiter, s.resolver, s.helper, s.factory, s.tm, s.GetAdminPath, s.SetAdminPath)
 
-	// Protected Admin Routes
-	r.Route("/admin", func(admin chi.Router) {
-		admin.Use(AdminAuthMiddleware(s.db, s.cfg.SessionIdleTimeout))
+	adminR := chi.NewRouter()
+	adminR.Get("/login", adminH.HandleLoginGet)
+	adminR.Post("/login", adminH.HandleLoginPost)
+	adminR.Post("/logout", adminH.HandleLogout)
+
+	adminR.Group(func(admin chi.Router) {
+		admin.Use(AdminAuthMiddleware(s.db, s.cfg.SessionIdleTimeout, s.GetAdminPath))
 
 		admin.Get("/", adminH.HandleDashboard)
 
@@ -169,6 +227,7 @@ func (s *Server) setupRoutes() {
 		// Settings & Circuit Breaker
 		admin.Get("/settings", adminH.HandleSettingsGet)
 		admin.Post("/settings/proxy", adminH.HandleSettingsProxyPost)
+		admin.Post("/settings/admin-path", adminH.HandleSettingsAdminPathPost)
 		admin.Post("/settings/sync-cloudflare", adminH.HandleSettingsSyncCloudflare)
 		admin.Post("/circuit-breaker/reset", adminH.HandleCircuitBreakerReset)
 
@@ -178,4 +237,6 @@ func (s *Server) setupRoutes() {
 		admin.Post("/users/{id}/toggle", adminH.HandleUsersToggle)
 		admin.Post("/users/{id}/unlock", adminH.HandleUsersUnlock)
 	})
+
+	s.adminRouter = adminR
 }

@@ -11,7 +11,7 @@
     <button type="button" id="probe-all-ports-btn" class="btn btn-primary btn-sm">
       ▶ Probe Port Reachability
     </button>
-    <a href="/admin/open-ports" class="btn btn-secondary btn-sm">
+    <a href="{{adminURL "/open-ports"}}" class="btn btn-secondary btn-sm">
       ↻ Refresh
     </a>
   </div>
@@ -39,7 +39,7 @@
   <div class="metric-card">
     <div class="metric-label">Configured Port Groups</div>
     <div class="metric-value">{{.ConfiguredPortGroupsCount}}</div>
-    <div style="font-size: 0.8rem; color: var(--text-secondary);"><a href="/admin/port-groups" style="color: #38bdf8;">Manage Port Groups &rarr;</a></div>
+    <div style="font-size: 0.8rem; color: var(--text-secondary);"><a href="{{adminURL "/port-groups"}}" style="color: #38bdf8;">Manage Port Groups &rarr;</a></div>
   </div>
 </div>
 
@@ -121,7 +121,7 @@
                     <span style="color: #fbbf24; font-family: monospace; font-size: 0.8rem;" data-countdown-seconds="{{.RemainingSeconds}}" data-format-minutes="true">
                       {{.RemainingSeconds}}s
                     </span>
-                    <form action="/admin/grants/{{.GrantID}}/revoke?from=open-ports" method="POST" style="margin: 0;" onsubmit="return confirm('Immediately revoke grant #{{.GrantID}} for {{.SourceIP}}?');">
+                    <form action="{{adminURL "/grants"}}/{{.GrantID}}/revoke?from=open-ports" method="POST" style="margin: 0;" onsubmit="return confirm('Immediately revoke grant #{{.GrantID}} for {{.SourceIP}}?');">
                       <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
                       <button type="submit" class="btn btn-danger btn-sm" style="padding: 0.15rem 0.45rem; font-size: 0.75rem;">Revoke</button>
                     </form>
@@ -253,7 +253,7 @@
         Reusable port rules defined in Funnel available for visitor access keys and network CIDRs
       </p>
     </div>
-    <a href="/admin/port-groups" class="btn btn-secondary btn-sm">+ Manage Port Groups</a>
+    <a href="{{adminURL "/port-groups"}}" class="btn btn-secondary btn-sm">+ Manage Port Groups</a>
   </div>
 
   <div class="table-container">

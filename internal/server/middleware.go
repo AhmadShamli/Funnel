@@ -88,12 +88,17 @@ func GetCSRFToken(r *http.Request) string {
 }
 
 // AdminAuthMiddleware validates admin session and injects user and session into context.
-func AdminAuthMiddleware(db *database.DB, idleTimeout time.Duration) func(http.Handler) http.Handler {
+func AdminAuthMiddleware(db *database.DB, idleTimeout time.Duration, adminPathProvider func() string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			loginPath := "/admin/login"
+			if adminPathProvider != nil {
+				loginPath = adminPathProvider() + "/login"
+			}
+
 			cookie, err := r.Cookie("funnel_admin_session")
 			if err != nil || cookie.Value == "" {
-				http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+				http.Redirect(w, r, loginPath, http.StatusSeeOther)
 				return
 			}
 
@@ -109,14 +114,14 @@ func AdminAuthMiddleware(db *database.DB, idleTimeout time.Duration) func(http.H
 					MaxAge:   -1,
 					HttpOnly: true,
 				})
-				http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+				http.Redirect(w, r, loginPath, http.StatusSeeOther)
 				return
 			}
 
 			// Check admin user state
 			user, err := db.GetAdminUserByID(r.Context(), session.AdminUserID)
 			if err != nil || user == nil || !user.IsValidAt(now) || user.IsLocked(now) {
-				http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+				http.Redirect(w, r, loginPath, http.StatusSeeOther)
 				return
 			}
 

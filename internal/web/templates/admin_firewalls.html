@@ -7,7 +7,7 @@
       Inspect host Linux firewall backends, active driver, and validate tables
     </p>
   </div>
-  <form action="/admin/firewalls/validate" method="POST" style="margin: 0;">
+  <form action="{{adminURL "/firewalls/validate"}}" method="POST" style="margin: 0;">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <button type="submit" class="btn btn-primary btn-sm">▶ Run Backend Validation</button>
   </form>

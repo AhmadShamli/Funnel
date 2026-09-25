@@ -13,25 +13,42 @@ import (
 )
 
 type SetupHandlers struct {
-	cfg            *config.Config
-	db             *database.DB
-	tm             *web.TemplateManager
-	bootstrapToken *string
+	cfg               *config.Config
+	db                *database.DB
+	tm                *web.TemplateManager
+	bootstrapToken    *string
+	adminPathProvider func() string
 }
 
-func NewSetupHandlers(cfg *config.Config, db *database.DB, tm *web.TemplateManager, bootstrapToken *string) *SetupHandlers {
+func NewSetupHandlers(cfg *config.Config, db *database.DB, tm *web.TemplateManager, bootstrapToken *string, adminPathProvider func() string) *SetupHandlers {
 	return &SetupHandlers{
-		cfg:            cfg,
-		db:             db,
-		tm:             tm,
-		bootstrapToken: bootstrapToken,
+		cfg:               cfg,
+		db:                db,
+		tm:                tm,
+		bootstrapToken:    bootstrapToken,
+		adminPathProvider: adminPathProvider,
 	}
+}
+
+func (h *SetupHandlers) adminLoginURL(query string) string {
+	prefix := "/admin"
+	if h.adminPathProvider != nil {
+		prefix = h.adminPathProvider()
+	}
+	url := prefix + "/login"
+	if query != "" {
+		if !strings.HasPrefix(query, "?") {
+			query = "?" + query
+		}
+		url += query
+	}
+	return url
 }
 
 func (h *SetupHandlers) HandleSetupGet(w http.ResponseWriter, r *http.Request) {
 	count, err := h.db.CountAdminUsers(r.Context())
 	if err != nil || count > 0 {
-		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+		http.Redirect(w, r, h.adminLoginURL(""), http.StatusSeeOther)
 		return
 	}
 
@@ -46,7 +63,7 @@ func (h *SetupHandlers) HandleSetupGet(w http.ResponseWriter, r *http.Request) {
 func (h *SetupHandlers) HandleSetupPost(w http.ResponseWriter, r *http.Request) {
 	count, err := h.db.CountAdminUsers(r.Context())
 	if err != nil || count > 0 {
-		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+		http.Redirect(w, r, h.adminLoginURL(""), http.StatusSeeOther)
 		return
 	}
 
@@ -106,5 +123,5 @@ func (h *SetupHandlers) HandleSetupPost(w http.ResponseWriter, r *http.Request) 
 		DetailsJSON:     `{"message":"initial admin account bootstrapped"}`,
 	})
 
-	http.Redirect(w, r, "/admin/login?success=Setup+complete.+Please+sign+in.", http.StatusSeeOther)
+	http.Redirect(w, r, h.adminLoginURL("success=Setup+complete.+Please+sign+in."), http.StatusSeeOther)
 }

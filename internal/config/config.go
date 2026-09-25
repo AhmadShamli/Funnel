@@ -89,6 +89,7 @@ type Config struct {
 	CookieSecure          bool
 	AdminMinPasswordLen   int
 	BootstrapToken        string
+	AdminPath             string // default "/admin"
 
 	// Ingress & Proxy
 	ProxyMode      string // "direct", "reverse_proxy", "cloudflare"
@@ -301,6 +302,11 @@ func Load() (*Config, error) {
 
 	cookieSecure := strings.ToLower(getEnv("COOKIE_SECURE", "false")) == "true"
 
+	adminPath := getEnv("FUNNEL_ADMIN_PATH", getEnv("ADMIN_PATH", "/admin"))
+	if adminPath == "" || !strings.HasPrefix(adminPath, "/") {
+		adminPath = "/admin"
+	}
+
 	return &Config{
 		Host:                      host,
 		Port:                      port,
@@ -310,6 +316,7 @@ func Load() (*Config, error) {
 		SessionMaxLifetime:        8 * time.Hour,
 		CookieSecure:              cookieSecure,
 		AdminMinPasswordLen:       12,
+		AdminPath:                 adminPath,
 		ProxyMode:                 proxyMode,
 		TrustedProxies:            trustedProxies,
 		FirewallBackend:           fwBackend,

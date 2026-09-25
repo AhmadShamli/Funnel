@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"net/http"
 	"path/filepath"
+	"strings"
+	"sync"
 
 	"github.com/AhmadShamli/Funnel/internal/models"
 	"github.com/AhmadShamli/Funnel/internal/version"
@@ -14,6 +16,27 @@ import (
 
 //go:embed static/* templates/*
 var EmbeddedFS embed.FS
+
+var (
+	adminPathMu       sync.RWMutex
+	adminPathProvider = func() string { return "/admin" }
+)
+
+// SetAdminPathProvider sets the dynamic provider for the admin URL path prefix.
+func SetAdminPathProvider(p func() string) {
+	adminPathMu.Lock()
+	defer adminPathMu.Unlock()
+	if p != nil {
+		adminPathProvider = p
+	}
+}
+
+// GetAdminPath returns the currently configured admin URL path prefix.
+func GetAdminPath() string {
+	adminPathMu.RLock()
+	defer adminPathMu.RUnlock()
+	return adminPathProvider()
+}
 
 // TemplateManager parses and executes embedded templates.
 type TemplateManager struct {
@@ -31,6 +54,19 @@ func NewTemplateManager() (*TemplateManager, error) {
 		"appName":    func() string { return version.AppName },
 		"author":     func() string { return version.Author },
 		"repoURL":    func() string { return version.RepositoryURL },
+		"adminPath": func() string {
+			return GetAdminPath()
+		},
+		"adminURL": func(subpath string) string {
+			prefix := GetAdminPath()
+			if subpath == "" || subpath == "/" {
+				return prefix
+			}
+			if !strings.HasPrefix(subpath, "/") {
+				subpath = "/" + subpath
+			}
+			return prefix + subpath
+		},
 		"hasPortGroup": func(pgs []models.PortGroup, id int64) bool {
 			for _, pg := range pgs {
 				if pg.ID == id {

@@ -47,7 +47,7 @@
         <td>
           <div class="flex-row">
             <button type="button" class="btn btn-secondary btn-sm" data-modal-open="edit-network-modal-{{.ID}}">Edit</button>
-            <form action="/admin/allowed-networks/{{.ID}}/delete" method="POST" style="margin: 0;" onsubmit="return confirm('Delete allowed network rule {{.Name}}?');">
+            <form action="{{adminURL "/allowed-networks"}}/{{.ID}}/delete" method="POST" style="margin: 0;" onsubmit="return confirm('Delete allowed network rule {{.Name}}?');">
               <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
               <button type="submit" class="btn btn-danger btn-sm">Delete</button>
             </form>
@@ -71,7 +71,7 @@
       <h3>Edit Allowed Network Rule: {{$net.Name}}</h3>
       <button type="button" class="modal-close" data-modal-close>✕</button>
     </div>
-    <form action="/admin/allowed-networks/{{$net.ID}}" method="POST">
+    <form action="{{adminURL "/allowed-networks"}}/{{$net.ID}}" method="POST">
       <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
 
       <div class="form-group">
@@ -126,7 +126,7 @@
       <h3>Add Allowed Network Rule</h3>
       <button type="button" class="modal-close" data-modal-close>✕</button>
     </div>
-    <form action="/admin/allowed-networks" method="POST">
+    <form action="{{adminURL "/allowed-networks"}}" method="POST">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
       <div class="form-group">

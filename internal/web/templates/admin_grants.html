@@ -53,7 +53,7 @@
         </td>
         <td>
           {{if eq .Status "active"}}
-          <form action="/admin/grants/{{.ID}}/revoke" method="POST" style="margin: 0;" onsubmit="return confirm('Immediately revoke grant for {{.SourceIP}}?');">
+          <form action="{{adminURL "/grants"}}/{{.ID}}/revoke" method="POST" style="margin: 0;" onsubmit="return confirm('Immediately revoke grant for {{.SourceIP}}?');">
             <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
             <button type="submit" class="btn btn-danger btn-sm">Revoke</button>
           </form>

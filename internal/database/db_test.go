@@ -175,3 +175,49 @@ func TestDatabaseCRUD(t *testing.T) {
 		t.Fatalf("expected 1 audit event, got %d", len(events))
 	}
 }
+
+func TestSystemSettings(t *testing.T) {
+	db, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Initial get should return empty string and no error
+	val, err := db.GetSystemSetting(ctx, "admin_path")
+	if err != nil {
+		t.Fatalf("unexpected error getting unset setting: %v", err)
+	}
+	if val != "" {
+		t.Fatalf("expected empty setting, got %q", val)
+	}
+
+	// Set value
+	if err := db.SetSystemSetting(ctx, "admin_path", "/my-custom-portal"); err != nil {
+		t.Fatalf("failed to set system setting: %v", err)
+	}
+
+	// Retrieve value
+	val, err = db.GetSystemSetting(ctx, "admin_path")
+	if err != nil {
+		t.Fatalf("failed to get system setting: %v", err)
+	}
+	if val != "/my-custom-portal" {
+		t.Fatalf("expected '/my-custom-portal', got %q", val)
+	}
+
+	// Overwrite value
+	if err := db.SetSystemSetting(ctx, "admin_path", "/updated-portal"); err != nil {
+		t.Fatalf("failed to overwrite system setting: %v", err)
+	}
+	val, err = db.GetSystemSetting(ctx, "admin_path")
+	if err != nil {
+		t.Fatalf("failed to get overwritten system setting: %v", err)
+	}
+	if val != "/updated-portal" {
+		t.Fatalf("expected '/updated-portal', got %q", val)
+	}
+}
+

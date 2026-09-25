@@ -78,7 +78,7 @@ func TestHealthEndpoint(t *testing.T) {
 
 	body := rec.Body.String()
 	if !strings.Contains(body, `"status":"ok"`) || !strings.Contains(body, `"database":"connected"`) ||
-		!strings.Contains(body, `"version":"0.4.4"`) || !strings.Contains(body, `"app":"Funnel by ExciteCreation"`) ||
+		!strings.Contains(body, `"version":"0.4.5"`) || !strings.Contains(body, `"app":"Funnel by ExciteCreation"`) ||
 		!strings.Contains(body, `"repository":"https://github.com/AhmadShamli/Funnel"`) {
 		t.Fatalf("unexpected health response: %s", body)
 	}
@@ -977,4 +977,188 @@ func TestOpenPortsCheckWithPortRange(t *testing.T) {
 		}
 	}
 }
+
+func TestAdminURLPathCustomization(t *testing.T) {
+	srv, db, _ := setupTestServer(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	handler := srv.Handler()
+
+	// 1. Initial default state: admin path is /admin
+	if srv.GetAdminPath() != "/admin" {
+		t.Fatalf("expected initial admin path to be '/admin', got %q", srv.GetAdminPath())
+	}
+
+	// Create an active admin user and session
+	adminUser := &models.AdminUser{
+		Username:     "admin-customizer",
+		PasswordHash: "fakehash",
+		Role:         "admin",
+		IsActive:     true,
+	}
+	_ = db.CreateAdminUser(ctx, adminUser)
+
+	rawToken := "customizer-session-token"
+	session := &models.AdminSession{
+		AdminUserID:      adminUser.ID,
+		SessionTokenHash: auth.HashToken(rawToken),
+		UserAgent:        "Go-Test",
+		ClientIP:         "127.0.0.1",
+		CreatedAt:        time.Now().UTC(),
+		LastActivityAt:   time.Now().UTC(),
+		ExpiresAt:        time.Now().UTC().Add(24 * time.Hour),
+	}
+	_ = db.CreateAdminSession(ctx, session)
+
+	sessionCookie := &http.Cookie{Name: "funnel_admin_session", Value: rawToken}
+
+	// Access /admin dashboard
+	reqAdmin := httptest.NewRequest("GET", "/admin", nil)
+	reqAdmin.AddCookie(sessionCookie)
+	recAdmin := httptest.NewRecorder()
+	handler.ServeHTTP(recAdmin, reqAdmin)
+	if recAdmin.Code != http.StatusOK {
+		t.Fatalf("expected 200 on /admin, got %d", recAdmin.Code)
+	}
+	csrfToken := getCSRFTokenFromResponse(recAdmin.Result())
+
+	// 2. Attempt changing without confirmation checkbox -> should fail
+	formNoConfirm := url.Values{
+		"csrf_token": {csrfToken},
+		"admin_path": []string{"/secret-mgmt"},
+	}
+	reqNoConfirm := httptest.NewRequest("POST", "/admin/settings/admin-path", strings.NewReader(formNoConfirm.Encode()))
+	reqNoConfirm.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	reqNoConfirm.AddCookie(sessionCookie)
+	reqNoConfirm.AddCookie(&http.Cookie{Name: "funnel_csrf", Value: csrfToken})
+	recNoConfirm := httptest.NewRecorder()
+	handler.ServeHTTP(recNoConfirm, reqNoConfirm)
+
+	if recNoConfirm.Code != http.StatusSeeOther {
+		t.Fatalf("expected redirect on unconfirmed change, got %d", recNoConfirm.Code)
+	}
+	if !strings.Contains(recNoConfirm.Header().Get("Location"), "error=") {
+		t.Fatalf("expected error in redirect, got %s", recNoConfirm.Header().Get("Location"))
+	}
+	if srv.GetAdminPath() != "/admin" {
+		t.Fatalf("admin path should remain /admin, got %q", srv.GetAdminPath())
+	}
+
+	// 3. Attempt changing to reserved route (e.g. /access or /)
+	formReserved := url.Values{
+		"csrf_token": {csrfToken},
+		"admin_path": []string{"/access"},
+		"confirm":    []string{"true"},
+	}
+	reqReserved := httptest.NewRequest("POST", "/admin/settings/admin-path", strings.NewReader(formReserved.Encode()))
+	reqReserved.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	reqReserved.AddCookie(sessionCookie)
+	reqReserved.AddCookie(&http.Cookie{Name: "funnel_csrf", Value: csrfToken})
+	recReserved := httptest.NewRecorder()
+	handler.ServeHTTP(recReserved, reqReserved)
+
+	if recReserved.Code != http.StatusSeeOther || !strings.Contains(recReserved.Header().Get("Location"), "error=") {
+		t.Fatalf("expected error on reserved route, got code %d, loc: %s", recReserved.Code, recReserved.Header().Get("Location"))
+	}
+
+	// 4. Successful change to /my-secret-portal
+	formValid := url.Values{
+		"csrf_token": {csrfToken},
+		"admin_path": []string{"/my-secret-portal"},
+		"confirm":    []string{"true"},
+	}
+	reqValid := httptest.NewRequest("POST", "/admin/settings/admin-path", strings.NewReader(formValid.Encode()))
+	reqValid.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	reqValid.AddCookie(sessionCookie)
+	reqValid.AddCookie(&http.Cookie{Name: "funnel_csrf", Value: csrfToken})
+	recValid := httptest.NewRecorder()
+	handler.ServeHTTP(recValid, reqValid)
+
+	if recValid.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 redirect on success, got %d", recValid.Code)
+	}
+	expectedLoc := "/my-secret-portal/settings?success=Admin+URL+path+successfully+updated+to+%2Fmy-secret-portal"
+	if recValid.Header().Get("Location") != expectedLoc {
+		t.Fatalf("expected redirect to %q, got %q", expectedLoc, recValid.Header().Get("Location"))
+	}
+
+	// Verify runtime path updated
+	if srv.GetAdminPath() != "/my-secret-portal" {
+		t.Fatalf("expected active admin path to be '/my-secret-portal', got %q", srv.GetAdminPath())
+	}
+
+	// 5. Old path /admin and /admin/login now return 404
+	reqOldAdmin := httptest.NewRequest("GET", "/admin", nil)
+	reqOldAdmin.AddCookie(sessionCookie)
+	recOldAdmin := httptest.NewRecorder()
+	handler.ServeHTTP(recOldAdmin, reqOldAdmin)
+	if recOldAdmin.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 on old /admin, got %d", recOldAdmin.Code)
+	}
+
+	reqOldLogin := httptest.NewRequest("GET", "/admin/login", nil)
+	recOldLogin := httptest.NewRecorder()
+	handler.ServeHTTP(recOldLogin, reqOldLogin)
+	if recOldLogin.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 on old /admin/login, got %d", recOldLogin.Code)
+	}
+
+	// 6. New path /my-secret-portal and /my-secret-portal/login work
+	reqNewLogin := httptest.NewRequest("GET", "/my-secret-portal/login", nil)
+	recNewLogin := httptest.NewRecorder()
+	handler.ServeHTTP(recNewLogin, reqNewLogin)
+	if recNewLogin.Code != http.StatusOK {
+		t.Fatalf("expected 200 on new /my-secret-portal/login, got %d", recNewLogin.Code)
+	}
+
+	reqNewDashboard := httptest.NewRequest("GET", "/my-secret-portal", nil)
+	reqNewDashboard.AddCookie(sessionCookie)
+	recNewDashboard := httptest.NewRecorder()
+	handler.ServeHTTP(recNewDashboard, reqNewDashboard)
+	if recNewDashboard.Code != http.StatusOK {
+		t.Fatalf("expected 200 on new /my-secret-portal, got %d", recNewDashboard.Code)
+	}
+
+	// Verify Audit Event was recorded
+	events, err := db.ListAuditEvents(ctx, "ADMIN_PATH_CHANGED", 10, 0)
+	if err != nil || len(events) != 1 {
+		t.Fatalf("expected 1 ADMIN_PATH_CHANGED audit event, got %d (err: %v)", len(events), err)
+	}
+	if !strings.Contains(events[0].DetailsJSON, "/my-secret-portal") {
+		t.Fatalf("expected audit event details to contain new path, got %s", events[0].DetailsJSON)
+	}
+
+	// 7. Simulating app restart / new server instance with same database
+	cfg := srv.cfg
+	factory := firewall.NewFactory("false")
+	helperClient := firewall.NewHelperClient("internal", "", "mock", factory)
+	rateLimiter := auth.NewRateLimiter(5, 60*time.Second, 5, 5*time.Minute, 15*time.Minute)
+	resolver := ipresolver.NewResolver("direct", nil)
+	engine := policy.NewEngine(db, helperClient, rateLimiter, cfg.SecretKey)
+	tm, _ := web.NewTemplateManager()
+
+	srvRestarted, err := NewServer(cfg, db, engine, rateLimiter, resolver, helperClient, factory, tm, nil)
+	if err != nil {
+		t.Fatalf("NewServer on restart failed: %v", err)
+	}
+	if srvRestarted.GetAdminPath() != "/my-secret-portal" {
+		t.Fatalf("expected restored server to have '/my-secret-portal', got %q", srvRestarted.GetAdminPath())
+	}
+
+	// Verify restarted server serves /my-secret-portal and 404s /admin
+	restartedHandler := srvRestarted.Handler()
+	recRestoredOld := httptest.NewRecorder()
+	restartedHandler.ServeHTTP(recRestoredOld, httptest.NewRequest("GET", "/admin", nil))
+	if recRestoredOld.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 on /admin after restart, got %d", recRestoredOld.Code)
+	}
+
+	recRestoredNew := httptest.NewRecorder()
+	restartedHandler.ServeHTTP(recRestoredNew, httptest.NewRequest("GET", "/my-secret-portal/login", nil))
+	if recRestoredNew.Code != http.StatusOK {
+		t.Fatalf("expected 200 on /my-secret-portal/login after restart, got %d", recRestoredNew.Code)
+	}
+}
+
 

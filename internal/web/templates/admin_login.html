@@ -14,7 +14,7 @@
     </div>
     {{end}}
 
-    <form action="/admin/login" method="POST">
+    <form action="{{adminURL "/login"}}" method="POST">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
       <div class="form-group">

@@ -59,7 +59,7 @@
         <td>
           <div class="flex-row">
             <button type="button" class="btn btn-secondary btn-sm" data-modal-open="edit-group-modal-{{.ID}}">Edit</button>
-            <form action="/admin/port-groups/{{.ID}}/delete" method="POST" style="margin: 0;" onsubmit="return confirm('Delete port group {{.Name}}?');">
+            <form action="{{adminURL "/port-groups"}}/{{.ID}}/delete" method="POST" style="margin: 0;" onsubmit="return confirm('Delete port group {{.Name}}?');">
               <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
               <button type="submit" class="btn btn-danger btn-sm">Delete</button>
             </form>
@@ -83,7 +83,7 @@
       <h3>Edit Port Group: {{$pg.Name}}</h3>
       <button type="button" class="modal-close" data-modal-close>✕</button>
     </div>
-    <form action="/admin/port-groups/{{$pg.ID}}" method="POST">
+    <form action="{{adminURL "/port-groups"}}/{{$pg.ID}}" method="POST">
       <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
 
       <div class="form-group">
@@ -177,7 +177,7 @@
       <h3>Create Port Group</h3>
       <button type="button" class="modal-close" data-modal-close>✕</button>
     </div>
-    <form action="/admin/port-groups" method="POST">
+    <form action="{{adminURL "/port-groups"}}" method="POST">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
       <div class="form-group">

@@ -3,8 +3,8 @@
 <div class="content-header">
   <h2>Operational Overview</h2>
   <div style="display: flex; gap: 0.5rem;">
-    <a href="/admin/open-ports" class="btn btn-secondary btn-sm">🔓 View Open Ports</a>
-    <a href="/admin/grants" class="btn btn-primary btn-sm">Inspect Active Grants</a>
+    <a href="{{adminURL "/open-ports"}}" class="btn btn-secondary btn-sm">🔓 View Open Ports</a>
+    <a href="{{adminURL "/grants"}}" class="btn btn-primary btn-sm">Inspect Active Grants</a>
   </div>
 </div>
 
@@ -14,7 +14,7 @@
     <div class="metric-value">{{.ActiveGrantsCount}}</div>
     <div style="display: flex; justify-content: space-between; align-items: center;">
       <span style="font-size: 0.8rem; color: var(--text-secondary);">Currently open on host firewall</span>
-      <a href="/admin/open-ports" style="font-size: 0.8rem; color: #38bdf8;">View &rarr;</a>
+      <a href="{{adminURL "/open-ports"}}" style="font-size: 0.8rem; color: #38bdf8;">View &rarr;</a>
     </div>
   </div>
 
@@ -41,7 +41,7 @@
 
 <div class="content-header" style="margin-top: 2rem;">
   <h3>Recent Audit Events</h3>
-  <a href="/admin/audit" class="btn btn-secondary btn-sm">View Full Log</a>
+  <a href="{{adminURL "/audit"}}" class="btn btn-secondary btn-sm">View Full Log</a>
 </div>
 
 <div class="table-container">

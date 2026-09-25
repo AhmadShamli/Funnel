@@ -12,7 +12,7 @@
   <div class="admin-shell">
     <aside class="admin-sidebar">
       <div class="brand">
-        <a href="/admin" style="color: inherit; text-decoration: none; display: flex; align-items: center; gap: 0.5rem;">
+        <a href="{{adminURL ""}}" style="color: inherit; text-decoration: none; display: flex; align-items: center; gap: 0.5rem;">
           <span>⚡ Funnel</span>
         </a>
         <span class="badge badge-info" style="font-size: 0.65rem;">v{{appVersion}}</span>
@@ -21,19 +21,19 @@
         by <a href="{{repoURL}}" target="_blank" rel="noopener noreferrer">ExciteCreation</a>
       </div>
       <ul class="admin-nav">
-        <li><a href="/admin" class="{{if eq .ActiveNav "dashboard"}}active{{end}}">📊 Dashboard</a></li>
-        <li><a href="/admin/open-ports" class="{{if eq .ActiveNav "open_ports"}}active{{end}}">🔓 Open Ports</a></li>
-        <li><a href="/admin/access-keys" class="{{if eq .ActiveNav "keys"}}active{{end}}">🔑 Access Keys</a></li>
-        <li><a href="/admin/port-groups" class="{{if eq .ActiveNav "port_groups"}}active{{end}}">🔌 Port Groups</a></li>
-        <li><a href="/admin/allowed-networks" class="{{if eq .ActiveNav "networks"}}active{{end}}">🌐 Allowed Networks</a></li>
-        <li><a href="/admin/grants" class="{{if eq .ActiveNav "grants"}}active{{end}}">🛡️ Active Grants</a></li>
-        <li><a href="/admin/firewalls" class="{{if eq .ActiveNav "firewalls"}}active{{end}}">🧱 Firewall Engine</a></li>
-        <li><a href="/admin/audit" class="{{if eq .ActiveNav "audit"}}active{{end}}">📜 Audit Logs</a></li>
-        <li><a href="/admin/settings" class="{{if eq .ActiveNav "settings"}}active{{end}}">⚙️ Settings & Ingress</a></li>
-        <li><a href="/admin/users" class="{{if eq .ActiveNav "users"}}active{{end}}">👥 Admin Users</a></li>
+        <li><a href="{{adminURL ""}}" class="{{if eq .ActiveNav "dashboard"}}active{{end}}">📊 Dashboard</a></li>
+        <li><a href="{{adminURL "/open-ports"}}" class="{{if eq .ActiveNav "open_ports"}}active{{end}}">🔓 Open Ports</a></li>
+        <li><a href="{{adminURL "/access-keys"}}" class="{{if eq .ActiveNav "keys"}}active{{end}}">🔑 Access Keys</a></li>
+        <li><a href="{{adminURL "/port-groups"}}" class="{{if eq .ActiveNav "port_groups"}}active{{end}}">🔌 Port Groups</a></li>
+        <li><a href="{{adminURL "/allowed-networks"}}" class="{{if eq .ActiveNav "networks"}}active{{end}}">🌐 Allowed Networks</a></li>
+        <li><a href="{{adminURL "/grants"}}" class="{{if eq .ActiveNav "grants"}}active{{end}}">🛡️ Active Grants</a></li>
+        <li><a href="{{adminURL "/firewalls"}}" class="{{if eq .ActiveNav "firewalls"}}active{{end}}">🧱 Firewall Engine</a></li>
+        <li><a href="{{adminURL "/audit"}}" class="{{if eq .ActiveNav "audit"}}active{{end}}">📜 Audit Logs</a></li>
+        <li><a href="{{adminURL "/settings"}}" class="{{if eq .ActiveNav "settings"}}active{{end}}">⚙️ Settings & Ingress</a></li>
+        <li><a href="{{adminURL "/users"}}" class="{{if eq .ActiveNav "users"}}active{{end}}">👥 Admin Users</a></li>
       </ul>
       <div style="padding: 1rem; border-top: 1px solid var(--border-color);">
-        <form action="/admin/logout" method="POST">
+        <form action="{{adminURL "/logout"}}" method="POST">
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
           <button type="submit" class="btn btn-secondary btn-sm" style="width: 100%;">Sign Out</button>
         </form>
@@ -60,7 +60,7 @@
           <strong>⚠️ Distributed Circuit Breaker Active:</strong>
           Public password logins are temporarily paused due to distributed brute-force detection across multiple IPs.
         </div>
-        <form action="/admin/circuit-breaker/reset" method="POST" style="margin: 0;">
+        <form action="{{adminURL "/circuit-breaker/reset"}}" method="POST" style="margin: 0;">
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
           <button type="submit" class="btn btn-danger btn-sm" style="background: #b91c1c; border: 1px solid #f87171;">
             Reset Circuit Breaker Now

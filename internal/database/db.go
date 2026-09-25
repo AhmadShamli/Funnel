@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -1211,3 +1212,24 @@ func (db *DB) PruneAuditEvents(ctx context.Context, olderThan time.Time) (int64,
 	}
 	return res.RowsAffected()
 }
+
+// GetSystemSetting retrieves a string value for a system setting key.
+// Returns an empty string and nil error if key does not exist.
+func (db *DB) GetSystemSetting(ctx context.Context, key string) (string, error) {
+	var val string
+	err := db.QueryRowContext(ctx, "SELECT value FROM system_settings WHERE key = ?", key).Scan(&val)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	return val, nil
+}
+
+// SetSystemSetting inserts or updates a system setting key-value pair.
+func (db *DB) SetSystemSetting(ctx context.Context, key, value string) error {
+	_, err := db.ExecContext(ctx, "INSERT OR REPLACE INTO system_settings (key, value) VALUES (?, ?)", key, value)
+	return err
+}
+
