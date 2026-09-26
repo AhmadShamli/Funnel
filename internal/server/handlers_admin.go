@@ -227,7 +227,7 @@ func (h *AdminHandlers) HandleDashboard(w http.ResponseWriter, r *http.Request) 
 	activeGrants, _ := h.db.ListActiveGrantsAll(r.Context(), now)
 	keys, _ := h.db.ListAccessKeys(r.Context())
 	groups, _ := h.db.ListPortGroups(r.Context())
-	events, _ := h.db.ListAuditEvents(r.Context(), "", 10, 0)
+	events, _ := h.db.ListAuditEvents(r.Context(), "", 50, 0)
 
 	activeKeysCount := 0
 	for _, k := range keys {
@@ -1077,7 +1077,13 @@ func (h *AdminHandlers) HandleOpenPortsCheck(w http.ResponseWriter, r *http.Requ
 // --- Active Grants ---
 
 func (h *AdminHandlers) HandleGrantsGet(w http.ResponseWriter, r *http.Request) {
-	grants, _ := h.db.ListGrants(r.Context(), "", 100, 0)
+	limit := 500
+	if lStr := r.URL.Query().Get("limit"); lStr != "" {
+		if l, err := strconv.Atoi(lStr); err == nil && l > 0 && l <= 5000 {
+			limit = l
+		}
+	}
+	grants, _ := h.db.ListGrants(r.Context(), "", limit, 0)
 	data := h.baseData(r, "grants")
 	data["Grants"] = grants
 	_ = h.tm.Render(w, "admin_grants", data)
@@ -1138,7 +1144,13 @@ func (h *AdminHandlers) HandleFirewallsValidate(w http.ResponseWriter, r *http.R
 // --- Audit ---
 
 func (h *AdminHandlers) HandleAuditGet(w http.ResponseWriter, r *http.Request) {
-	events, _ := h.db.ListAuditEvents(r.Context(), "", 100, 0)
+	limit := 500
+	if lStr := r.URL.Query().Get("limit"); lStr != "" {
+		if l, err := strconv.Atoi(lStr); err == nil && l > 0 && l <= 5000 {
+			limit = l
+		}
+	}
+	events, _ := h.db.ListAuditEvents(r.Context(), "", limit, 0)
 	data := h.baseData(r, "audit")
 	data["Events"] = events
 	_ = h.tm.Render(w, "admin_audit", data)

@@ -78,7 +78,7 @@ func TestHealthEndpoint(t *testing.T) {
 
 	body := rec.Body.String()
 	if !strings.Contains(body, `"status":"ok"`) || !strings.Contains(body, `"database":"connected"`) ||
-		!strings.Contains(body, `"version":"0.4.5"`) || !strings.Contains(body, `"app":"Funnel by ExciteCreation"`) ||
+		!strings.Contains(body, `"version":"0.4.6"`) || !strings.Contains(body, `"app":"Funnel by ExciteCreation"`) ||
 		!strings.Contains(body, `"repository":"https://github.com/AhmadShamli/Funnel"`) {
 		t.Fatalf("unexpected health response: %s", body)
 	}
@@ -1158,6 +1158,89 @@ func TestAdminURLPathCustomization(t *testing.T) {
 	restartedHandler.ServeHTTP(recRestoredNew, httptest.NewRequest("GET", "/my-secret-portal/login", nil))
 	if recRestoredNew.Code != http.StatusOK {
 		t.Fatalf("expected 200 on /my-secret-portal/login after restart, got %d", recRestoredNew.Code)
+	}
+}
+
+func TestTablePaginationEndpoints(t *testing.T) {
+	srv, db, _ := setupTestServer(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	// Create admin user and session
+	adminUser := &models.AdminUser{
+		Username:     "audit-admin",
+		PasswordHash: "fakehash",
+		Role:         "admin",
+		IsActive:     true,
+	}
+	_ = db.CreateAdminUser(ctx, adminUser)
+
+	rawToken := "pagination-session-token"
+	session := &models.AdminSession{
+		AdminUserID:      adminUser.ID,
+		SessionTokenHash: auth.HashToken(rawToken),
+		UserAgent:        "Go-Test",
+		ClientIP:         "127.0.0.1",
+		CreatedAt:        time.Now().UTC(),
+		LastActivityAt:   time.Now().UTC(),
+		ExpiresAt:        time.Now().UTC().Add(24 * time.Hour),
+	}
+	_ = db.CreateAdminSession(ctx, session)
+	sessionCookie := &http.Cookie{Name: "funnel_admin_session", Value: rawToken}
+
+	handler := srv.Handler()
+
+	// 1. Insert multiple audit events to verify limits and rendering
+	for i := 1; i <= 15; i++ {
+		_ = db.RecordAuditEvent(ctx, &models.AuditEvent{
+			EventType:       "TEST_EVENT",
+			ActorType:       "admin",
+			ActorIdentifier: "audit-admin",
+			TargetIP:        fmt.Sprintf("192.0.2.%d", i),
+			DetailsJSON:     fmt.Sprintf(`{"iteration":%d}`, i),
+		})
+	}
+
+	// 2. Query /admin/audit with default limit and with explicit ?limit=5
+	reqAudit := httptest.NewRequest("GET", "/admin/audit?limit=5", nil)
+	reqAudit.AddCookie(sessionCookie)
+	recAudit := httptest.NewRecorder()
+	handler.ServeHTTP(recAudit, reqAudit)
+
+	if recAudit.Code != http.StatusOK {
+		t.Fatalf("expected 200 on /admin/audit?limit=5, got %d", recAudit.Code)
+	}
+	bodyAudit := recAudit.Body.String()
+	if !strings.Contains(bodyAudit, "class=\"table-container\"") {
+		t.Fatalf("expected table-container in audit logs response")
+	}
+
+	// 3. Query /admin/grants with ?limit=20
+	reqGrants := httptest.NewRequest("GET", "/admin/grants?limit=20", nil)
+	reqGrants.AddCookie(sessionCookie)
+	recGrants := httptest.NewRecorder()
+	handler.ServeHTTP(recGrants, reqGrants)
+
+	if recGrants.Code != http.StatusOK {
+		t.Fatalf("expected 200 on /admin/grants, got %d", recGrants.Code)
+	}
+	bodyGrants := recGrants.Body.String()
+	if !strings.Contains(bodyGrants, "class=\"table-container\"") {
+		t.Fatalf("expected table-container in grants response")
+	}
+
+	// 4. Query /admin dashboard to verify recent events table with data-page-size="5"
+	reqDash := httptest.NewRequest("GET", "/admin", nil)
+	reqDash.AddCookie(sessionCookie)
+	recDash := httptest.NewRecorder()
+	handler.ServeHTTP(recDash, reqDash)
+
+	if recDash.Code != http.StatusOK {
+		t.Fatalf("expected 200 on /admin, got %d", recDash.Code)
+	}
+	bodyDash := recDash.Body.String()
+	if !strings.Contains(bodyDash, `data-page-size="5"`) {
+		t.Fatalf("expected dashboard recent events table to contain data-page-size=\"5\"")
 	}
 }
 

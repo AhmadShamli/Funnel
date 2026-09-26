@@ -35,8 +35,8 @@ func TestEmbeddedTemplates(t *testing.T) {
 			if !strings.Contains(body, "https://github.com/AhmadShamli/Funnel") {
 				t.Errorf("template %s missing github repository link", name)
 			}
-			if !strings.Contains(body, "v0.4.5") {
-				t.Errorf("template %s missing version 'v0.4.5'", name)
+			if !strings.Contains(body, "v0.4.6") {
+				t.Errorf("template %s missing version 'v0.4.6'", name)
 			}
 		}
 		if name == "visitor_status" {
@@ -104,5 +104,12 @@ func TestEmbeddedTemplates(t *testing.T) {
 	}
 	if !strings.Contains(cssStr, "clamp(") {
 		t.Errorf("style.css missing clamp for fluid countdown digits sizing")
+	}
+	if !strings.Contains(cssStr, ".table-toolbar") || !strings.Contains(cssStr, ".table-pagination") {
+		t.Errorf("style.css missing table pagination and toolbar styles")
+	}
+
+	if !strings.Contains(jsStr, "function initTablePagination") || !strings.Contains(jsStr, "setupTablePagination") {
+		t.Errorf("app.js missing universal table pagination functions")
 	}
 }

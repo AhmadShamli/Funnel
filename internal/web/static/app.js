@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initPasswordVisibilityToggles();
   initModals();
   initPortAccessibilityChecker();
+  initTablePagination();
   initAdminOpenPorts();
 
   const createKeyModal = document.getElementById('create-key-modal');
@@ -305,9 +306,19 @@ function initAdminOpenPorts() {
       rows.forEach(row => {
         const text = (row.getAttribute('data-search') || row.textContent).toLowerCase();
         if (!q || text.includes(q)) {
+          row.setAttribute('data-external-filtered', 'false');
           row.style.display = '';
         } else {
+          row.setAttribute('data-external-filtered', 'true');
           row.style.display = 'none';
+        }
+      });
+      document.querySelectorAll('.filterable-table').forEach(tbl => {
+        if (typeof tbl.refreshPagination === 'function') {
+          if (typeof tbl.setPage === 'function') {
+            tbl.setPage(1);
+          }
+          tbl.refreshPagination();
         }
       });
     });
@@ -421,6 +432,349 @@ function initAdminOpenPorts() {
       runProbe();
     });
   }
+}
+
+// Universal Table Pagination & Filtering functionality
+function initTablePagination() {
+  const containers = document.querySelectorAll('.table-container');
+  containers.forEach((container, idx) => {
+    const table = container.querySelector('table');
+    if (!table || table.getAttribute('data-no-paginate') === 'true') return;
+    setupTablePagination(table, container, idx);
+  });
+}
+
+function setupTablePagination(table, container, tableIdx) {
+  if (table.getAttribute('data-paginated') === 'true') return;
+  table.setAttribute('data-paginated', 'true');
+
+  const tbody = table.querySelector('tbody');
+  if (!tbody) return;
+
+  const tableId = table.id || ('paginated-table-' + tableIdx);
+  const savedLimit = localStorage.getItem('funnel_table_limit');
+  const attrLimit = table.getAttribute('data-page-size');
+  let pageSize = parseInt(attrLimit || savedLimit || '10', 10);
+  if (isNaN(pageSize)) pageSize = 10;
+  let currentPage = 1;
+  let searchQuery = '';
+
+  // 1. Build Top Toolbar
+  const toolbar = document.createElement('div');
+  toolbar.className = 'table-toolbar';
+
+  const limitWrapper = document.createElement('div');
+  limitWrapper.className = 'table-limit-control';
+
+  const limitLabel = document.createElement('label');
+  limitLabel.htmlFor = `table-limit-${tableId}`;
+  limitLabel.textContent = 'Show';
+
+  const limitSelect = document.createElement('select');
+  limitSelect.id = `table-limit-${tableId}`;
+  limitSelect.className = 'table-limit-select';
+  limitSelect.setAttribute('aria-label', 'Entries per page');
+
+  const options = [
+    { val: 5, text: '5' },
+    { val: 10, text: '10' },
+    { val: 25, text: '25' },
+    { val: 50, text: '50' },
+    { val: 100, text: '100' },
+    { val: -1, text: 'All' }
+  ];
+
+  let limitMatched = false;
+  options.forEach(opt => {
+    const optEl = document.createElement('option');
+    optEl.value = opt.val;
+    optEl.textContent = opt.text;
+    if (opt.val === pageSize) {
+      optEl.selected = true;
+      limitMatched = true;
+    }
+    limitSelect.appendChild(optEl);
+  });
+  if (!limitMatched) {
+    const customOpt = document.createElement('option');
+    customOpt.value = pageSize;
+    customOpt.textContent = String(pageSize);
+    customOpt.selected = true;
+    limitSelect.insertBefore(customOpt, limitSelect.lastElementChild);
+  }
+
+  const limitSuffix = document.createElement('span');
+  limitSuffix.textContent = 'entries per page';
+
+  limitWrapper.appendChild(limitLabel);
+  limitWrapper.appendChild(limitSelect);
+  limitWrapper.appendChild(limitSuffix);
+  toolbar.appendChild(limitWrapper);
+
+  let searchInput = null;
+  if (table.getAttribute('data-no-search') !== 'true') {
+    const searchWrapper = document.createElement('div');
+    searchWrapper.className = 'table-search-control';
+
+    searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'table-search-input';
+    searchInput.placeholder = 'Search table...';
+    searchInput.setAttribute('aria-label', 'Search table records');
+
+    searchWrapper.appendChild(searchInput);
+    toolbar.appendChild(searchWrapper);
+  }
+
+  container.insertBefore(toolbar, table);
+
+  // 2. Build Bottom Pagination Bar
+  const pagination = document.createElement('div');
+  pagination.className = 'table-pagination';
+
+  const infoEl = document.createElement('div');
+  infoEl.className = 'table-pagination-info';
+
+  const navEl = document.createElement('div');
+  navEl.className = 'table-pagination-nav';
+
+  const btnFirst = document.createElement('button');
+  btnFirst.type = 'button';
+  btnFirst.className = 'page-btn page-first';
+  btnFirst.innerHTML = '«';
+  btnFirst.title = 'First Page';
+
+  const btnPrev = document.createElement('button');
+  btnPrev.type = 'button';
+  btnPrev.className = 'page-btn page-prev';
+  btnPrev.innerHTML = '‹';
+  btnPrev.title = 'Previous Page';
+
+  const numbersEl = document.createElement('div');
+  numbersEl.className = 'page-numbers';
+
+  const btnNext = document.createElement('button');
+  btnNext.type = 'button';
+  btnNext.className = 'page-btn page-next';
+  btnNext.innerHTML = '›';
+  btnNext.title = 'Next Page';
+
+  const btnLast = document.createElement('button');
+  btnLast.type = 'button';
+  btnLast.className = 'page-btn page-last';
+  btnLast.innerHTML = '»';
+  btnLast.title = 'Last Page';
+
+  navEl.appendChild(btnFirst);
+  navEl.appendChild(btnPrev);
+  navEl.appendChild(numbersEl);
+  navEl.appendChild(btnNext);
+  navEl.appendChild(btnLast);
+
+  pagination.appendChild(infoEl);
+  pagination.appendChild(navEl);
+  container.appendChild(pagination);
+
+  function getDataRows() {
+    return Array.from(tbody.querySelectorAll('tr')).filter(tr => {
+      return !tr.classList.contains('table-search-empty-row') && !tr.querySelector('td[colspan]');
+    });
+  }
+
+  function render() {
+    const allDataRows = getDataRows();
+    const totalAll = allDataRows.length;
+
+    if (totalAll === 0) {
+      infoEl.textContent = 'Showing 0 to 0 of 0 entries';
+      btnFirst.disabled = true;
+      btnPrev.disabled = true;
+      btnNext.disabled = true;
+      btnLast.disabled = true;
+      numbersEl.innerHTML = '';
+      return;
+    }
+
+    const visibleRows = allDataRows.filter(row => {
+      if (row.getAttribute('data-external-filtered') === 'true') {
+        return false;
+      }
+      if (!searchQuery) {
+        return true;
+      }
+      const text = (row.getAttribute('data-search') || row.textContent).toLowerCase();
+      return text.includes(searchQuery);
+    });
+
+    const totalMatching = visibleRows.length;
+    const isLimited = pageSize > 0;
+    const totalPages = isLimited ? Math.max(1, Math.ceil(totalMatching / pageSize)) : 1;
+
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
+
+    const startIdx = isLimited ? (currentPage - 1) * pageSize : 0;
+    const endIdx = isLimited ? Math.min(startIdx + pageSize, totalMatching) : totalMatching;
+
+    // Hide all data rows
+    allDataRows.forEach(row => {
+      row.style.display = 'none';
+    });
+
+    // Display rows for the current page
+    for (let i = startIdx; i < endIdx; i++) {
+      if (visibleRows[i]) {
+        visibleRows[i].style.display = '';
+      }
+    }
+
+    // Handle empty search feedback row
+    let noResultsRow = tbody.querySelector('.table-search-empty-row');
+    if (totalMatching === 0) {
+      if (!noResultsRow) {
+        noResultsRow = document.createElement('tr');
+        noResultsRow.className = 'table-search-empty-row';
+        const cols = table.querySelectorAll('thead th').length || 6;
+        noResultsRow.innerHTML = `<td colspan="${cols}" style="text-align: center; color: var(--text-muted); padding: 2rem;">No matching records found</td>`;
+        tbody.appendChild(noResultsRow);
+      }
+      noResultsRow.style.display = '';
+    } else if (noResultsRow) {
+      noResultsRow.style.display = 'none';
+    }
+
+    // Info display
+    if (totalMatching === 0) {
+      infoEl.innerHTML = `Showing <strong>0</strong> to <strong>0</strong> of <strong>0</strong> entries (filtered from ${totalAll} total)`;
+    } else if (totalMatching < totalAll) {
+      infoEl.innerHTML = `Showing <strong>${startIdx + 1}</strong> to <strong>${endIdx}</strong> of <strong>${totalMatching}</strong> entries (filtered from ${totalAll} total)`;
+    } else {
+      infoEl.innerHTML = `Showing <strong>${startIdx + 1}</strong> to <strong>${endIdx}</strong> of <strong>${totalMatching}</strong> entries`;
+    }
+
+    // Navigation buttons
+    btnFirst.disabled = (currentPage <= 1 || !isLimited);
+    btnPrev.disabled = (currentPage <= 1 || !isLimited);
+    btnNext.disabled = (currentPage >= totalPages || !isLimited);
+    btnLast.disabled = (currentPage >= totalPages || !isLimited);
+
+    renderPageNumbers(totalPages);
+  }
+
+  function renderPageNumbers(totalPages) {
+    numbersEl.innerHTML = '';
+    if (totalPages <= 1 || pageSize <= 0) return;
+
+    let startPage = Math.max(1, currentPage - 2);
+    let endPage = Math.min(totalPages, currentPage + 2);
+
+    if (currentPage <= 3) {
+      endPage = Math.min(totalPages, 5);
+    } else if (currentPage >= totalPages - 2) {
+      startPage = Math.max(1, totalPages - 4);
+    }
+
+    if (startPage > 1) {
+      addPageButton(1);
+      if (startPage > 2) {
+        const ellipsis = document.createElement('span');
+        ellipsis.className = 'page-ellipsis';
+        ellipsis.textContent = '…';
+        numbersEl.appendChild(ellipsis);
+      }
+    }
+
+    for (let p = startPage; p <= endPage; p++) {
+      addPageButton(p);
+    }
+
+    if (endPage < totalPages) {
+      if (endPage < totalPages - 1) {
+        const ellipsis = document.createElement('span');
+        ellipsis.className = 'page-ellipsis';
+        ellipsis.textContent = '…';
+        numbersEl.appendChild(ellipsis);
+      }
+      addPageButton(totalPages);
+    }
+  }
+
+  function addPageButton(pageNum) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'page-btn' + (pageNum === currentPage ? ' active' : '');
+    btn.textContent = pageNum;
+    btn.setAttribute('aria-label', `Page ${pageNum}`);
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      currentPage = pageNum;
+      render();
+    });
+    numbersEl.appendChild(btn);
+  }
+
+  limitSelect.addEventListener('change', () => {
+    pageSize = parseInt(limitSelect.value, 10);
+    try {
+      localStorage.setItem('funnel_table_limit', limitSelect.value);
+    } catch (e) {}
+    currentPage = 1;
+    render();
+  });
+
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      searchQuery = searchInput.value.trim().toLowerCase();
+      currentPage = 1;
+      render();
+    });
+  }
+
+  btnFirst.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (currentPage > 1) {
+      currentPage = 1;
+      render();
+    }
+  });
+
+  btnPrev.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (currentPage > 1) {
+      currentPage--;
+      render();
+    }
+  });
+
+  btnNext.addEventListener('click', (e) => {
+    e.preventDefault();
+    currentPage++;
+    render();
+  });
+
+  btnLast.addEventListener('click', (e) => {
+    e.preventDefault();
+    const allDataRows = getDataRows();
+    const visibleRows = allDataRows.filter(row => row.getAttribute('data-external-filtered') !== 'true' && (!searchQuery || (row.getAttribute('data-search') || row.textContent).toLowerCase().includes(searchQuery)));
+    const totalPages = pageSize > 0 ? Math.ceil(visibleRows.length / pageSize) : 1;
+    currentPage = totalPages;
+    render();
+  });
+
+  table.refreshPagination = function() {
+    render();
+  };
+  table.setPage = function(p) {
+    currentPage = p;
+    render();
+  };
+  table.setPageSize = function(s) {
+    pageSize = s;
+    limitSelect.value = s;
+    render();
+  };
+
+  render();
 }
 
 

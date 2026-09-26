@@ -1,7 +1,7 @@
 # ⚡ Funnel by ExciteCreation
 
 [![GitHub](https://img.shields.io/badge/GitHub-AhmadShamli%2FFunnel-blue?logo=github)](https://github.com/AhmadShamli/Funnel)
-[![Version](https://img.shields.io/badge/version-0.4.5-emerald)](https://github.com/AhmadShamli/Funnel)
+[![Version](https://img.shields.io/badge/version-0.4.6-emerald)](https://github.com/AhmadShamli/Funnel)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 **On-demand, temporary firewall port access for your servers via a simple web interface.**
@@ -39,6 +39,7 @@ Through an embedded web dashboard at `/admin` (or customizable cloaked path), ad
 - **Access Keys**: Create labeled passwords (e.g. *"Dev Team"*, *"Contractor Bob"*, *"Staging Testing"*). Optionally set expiration dates, max concurrent IPs, or single-use limits.
 - **Allowed Networks (CIDR Policies)**: Whitelist office or home IP ranges to be **Always-Allowed** (automatic access without needing a password) or enforce password requirements.
 - **Admin Portal URL Cloaking**: Customize and disguise the admin URL path to protect against automated bots and brute-force scans, with active path recovery displayed in service logs on restart.
+- **Universal Table Pagination & Filtering**: Interactive per-page limit controls (5, 10, 25, 50, 100, All), quick search filtering, and persisted pagination preferences across all admin tables.
 - **Immediate Port Refcounting**: If two people behind the same office IP have active sessions, closing one session only removes ports that are no longer needed by anyone.
 - **Automatic Reboot Reconciliation**: If your server reboots, Funnel immediately scans active grants and re-applies their firewall rules, while purging any expired ones.
 - **Brute-Force & Botnet Protection**: Built-in two-tier rate limiting slows down attackers on a single IP and trips a global circuit breaker if password spraying occurs across multiple IPs.
@@ -114,7 +115,7 @@ To upgrade an existing installation, re-run `install.sh` (or pass `--upgrade`):
 sudo bash deploy/install.sh --upgrade
 
 # Upgrade to a specific version:
-sudo bash deploy/install.sh --version v0.4.5
+sudo bash deploy/install.sh --version v0.4.6
 
 # Check installed version vs latest available release without upgrading:
 bash deploy/install.sh --check
